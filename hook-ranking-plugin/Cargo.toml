@@ -18,11 +18,11 @@ crate-type = ["cdylib", "rlib"]
 # THE LOGIC, same repo: its `door::door` is the door this image exports. A busbar build that LINKS
 # the hook names the logic crate, which exports no symbol.
 busbar-hook-ranking = { path = "../hook-ranking" }
-busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+busbar-contract = { workspace = true }
 
 [dev-dependencies]
 # The conformance test loads the linked door and dlopens the built cdylib over the REAL loader:
 # dev-only, never in the shipped artifact. Same pinned rev, so one busbar source resolves.
-busbar-plugin-loader = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+busbar-plugin-loader = { workspace = true }
 
-serde_json = "1"
+serde_json = { workspace = true }
