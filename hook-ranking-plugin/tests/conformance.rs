@@ -181,7 +181,7 @@ const CONTEXT: RoutingContext<'static> = RoutingContext {
 };
 
 /// `decide` over `rows`: the order the door answered (`None` = abstained).
-fn decide(p: &Plugin<Hook>, rows: &[Row]) -> Option<Vec<u32>> {
+fn decide(p: &Plugin<Hook>, rows: &[Row]) -> Option<Vec<usize>> {
     let frame = DecideFrame::new(
         DecideView::build(&request(), &candidates(rows), &CONTEXT),
         Caps {
@@ -201,7 +201,7 @@ fn decide(p: &Plugin<Hook>, rows: &[Row]) -> Option<Vec<u32>> {
 }
 
 /// What the logic ranks `rows` to, per word.
-const EXPECT: [(&str, [u32; 3]); 4] = [
+const EXPECT: [(&str, [usize; 3]); 4] = [
     ("cheapest", [9, 3, 7]),
     ("fastest", [9, 7, 3]),
     ("least_busy", [7, 3, 9]),
