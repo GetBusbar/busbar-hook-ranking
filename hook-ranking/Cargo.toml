@@ -1,17 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
 [package]
-name = "busbar-hooks-ranking"
+name = "busbar-hook-ranking"
 version = "1.6.0"
-publish = false            # internal workspace crate; never goes to crates.io
+publish = false            # a first-party plugin crate; shipped linked into busbar or as a signed tarball
 edition = "2021"
 rust-version = "1.97"
-description = "The built-in ranking hooks for busbar: cheapest / fastest / least_busy / usage order-gates over the routing-policy contract."
+description = "The ranking hook: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
 license = "Apache-2.0"
 
-[dependencies]
-busbar-contract = { path = "../busbar-contract" }
-async-trait = { workspace = true }
+[lib]
+# rlib: the LINKED door (`door::door`), which a busbar build names as a compiled-in row. The
+# dropped-in door is the sibling `busbar-hook-ranking-plugin` cdylib, which exports this same door
+# as its one symbol; this crate exports none.
+crate-type = ["rlib"]
 
-[dev-dependencies]
-# The native policies are sync; the async-trait wrapper still makes `decide` async, so the tests
-# need a (current-thread) runtime to drive it.
-tokio = { workspace = true, features = ["rt", "macros"] }
+[dependencies]
+# The ONE busbar crate a plugin names (the plugin SDK is `busbar_contract::abi::sdk`). Pinned by
+# git rev to the busbar commit in `.busbar-ref`.
+busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+# The settings document `open` reads (already in the contract's closure).
+serde_json = "1"
