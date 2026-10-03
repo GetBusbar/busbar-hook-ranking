@@ -153,6 +153,12 @@ pub const WORDS: [&str; 4] = [
 /// The package name a signed tarball of this plugin states (`manifest.name`).
 pub const NAME: &str = "busbar-hook-ranking";
 
+/// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis: its
+/// door, the same door the dropped-in build of it exports. Its hook words are [`WORDS`].
+pub mod linked {
+    pub use crate::door::door;
+}
+
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;
