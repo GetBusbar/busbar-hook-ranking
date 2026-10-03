@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Busbar Inc and contributors
 
 //! The RANKING hook: `cheapest` / `fastest` / `least_busy` / `usage`, each a small sync sort over
-//! the live signals a `decide` view already carries (`Decoded::candidates`). A hook plugin on the
+//! the live signals a `decide` view already carries ([`Candidate`]). A hook plugin on the
 //! hook kind's memory ABI ([`door`]); the four strategy words are the hook words its Statement
 //! claims. `weighted` is NOT a word of this plugin: it is the engine's non-removable inline SWRR
 //! floor (the name stays in [`rank`] as the explicit Abstaining form).
@@ -17,7 +17,34 @@
 
 pub mod door;
 
-use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
+/// The signals one candidate of a `decide` view carries, as the ranking reads them; a signal the
+/// host does not have is `None`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Candidate {
+    /// The candidate's index in the host's pool: what an order names.
+    pub idx: usize,
+    /// Its configured weight (no strategy ranks on it).
+    pub weight: u32,
+    /// The operator-declared cost per million tokens.
+    pub cost_per_mtok: Option<f64>,
+    /// The measured rolling-EWMA latency.
+    pub latency_ms: Option<f64>,
+    /// The free concurrency, always present.
+    pub available_concurrency: usize,
+    /// The budget it has left (no strategy ranks on it).
+    pub budget_remaining: Option<i64>,
+    /// The fraction of the governance rate budget still available this window.
+    pub rate_headroom: Option<f64>,
+}
+
+/// What a ranking answers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// The candidates' indices, most preferred first.
+    Prefer(Vec<usize>),
+    /// No opinion: the default SWRR.
+    Abstain,
+}
 
 // ── Policy-name constants ─────────────────────────────────────────────────────────────────────────
 // Single source of truth for the strategy names: the `rank` match arms and [`WORDS`] (the hook
@@ -62,8 +89,8 @@ impl RankKey for usize {
 /// member with missing signal data is reachable, not stranded. Returns `Abstain` if EVERY candidate
 /// lacks a usable signal (no opinion → default SWRR).
 fn rank_ascending_by<K: RankKey>(
-    candidates: &[DecodedCandidate<'_>],
-    key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
+    candidates: &[Candidate],
+    key: impl Fn(&Candidate) -> Option<K>,
 ) -> Verdict {
     let mut keyed: Vec<(usize, Option<K>)> = candidates
         .iter()
@@ -90,8 +117,8 @@ fn rank_ascending_by<K: RankKey>(
 /// The key extractor made TOTAL: a signal that is present but not orderable is reported as absent,
 /// so the comparator below only ever sees keys it can actually order. See [`RankKey`].
 fn usable_key<K: RankKey>(
-    key: &impl Fn(&DecodedCandidate<'_>) -> Option<K>,
-    candidate: &DecodedCandidate<'_>,
+    key: &impl Fn(&Candidate) -> Option<K>,
+    candidate: &Candidate,
 ) -> Option<K> {
     key(candidate).filter(|k| k.usable())
 }
@@ -99,8 +126,8 @@ fn usable_key<K: RankKey>(
 /// Rank descending (largest key first) — the same shape as `rank_ascending_by` but preferring the
 /// LARGEST signal (e.g. most free concurrency, most budget remaining).
 fn rank_descending_by<K: RankKey>(
-    candidates: &[DecodedCandidate<'_>],
-    key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
+    candidates: &[Candidate],
+    key: impl Fn(&Candidate) -> Option<K>,
 ) -> Verdict {
     let mut keyed: Vec<(usize, Option<K>)> = candidates
         .iter()
@@ -131,7 +158,7 @@ fn rank_descending_by<K: RankKey>(
 ///   available this window); a member with no headroom signal is demoted, and every member lacking
 ///   it Abstains (no rate limit in play).
 #[must_use]
-pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
+pub fn rank(name: &str, candidates: &[Candidate]) -> Option<Verdict> {
     Some(match name {
         POLICY_NAME_WEIGHTED => Verdict::Abstain,
         POLICY_NAME_CHEAPEST => rank_ascending_by(candidates, |c| c.cost_per_mtok),

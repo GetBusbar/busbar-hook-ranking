@@ -23,5 +23,5 @@ publish = false
 repository = "https://github.com/GetBusbar/busbar-hook-ranking"
 
 [workspace.dependencies]
-busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
-busbar-plugin-loader = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "aa45738df3080c782f694b4668ed6729525bee69" }
+busbar-plugin-loader = { git = "https://github.com/GetBusbar/busbar", rev = "aa45738df3080c782f694b4668ed6729525bee69" }

@@ -11,7 +11,7 @@ fn cand(
     lat: Option<f64>,
     conc: usize,
     budget: Option<i64>,
-) -> DecodedCandidate<'static> {
+) -> Candidate {
     // Most native tests don't exercise the `usage` signal; default `rate_headroom` to `None`.
     // The `usage` tests build candidates with `cand_rate` to set it explicitly.
     cand_rate(idx, cost, lat, conc, budget, None)
@@ -24,21 +24,15 @@ fn cand_rate(
     conc: usize,
     budget: Option<i64>,
     rate: Option<f64>,
-) -> DecodedCandidate<'static> {
-    DecodedCandidate {
+) -> Candidate {
+    Candidate {
         idx,
-        model: "m".into(),
-        provider: "p".into(),
         weight: 1,
-        context_max: None,
-        tier: None,
         cost_per_mtok: cost,
-        tags: Vec::new(),
         latency_ms: lat,
         available_concurrency: conc,
         budget_remaining: budget,
         rate_headroom: rate,
-        signals: Default::default(),
     }
 }
 
@@ -138,7 +132,7 @@ fn the_claimed_words_are_the_four_strategies() {
 /// An empty candidate pool yields `Abstain` for every native (no candidates → no opinion → SWRR).
 #[test]
 fn all_natives_abstain_on_empty_pool() {
-    let empty: [DecodedCandidate<'_>; 0] = [];
+    let empty: [Candidate; 0] = [];
     for name in ["weighted", "cheapest", "fastest", "least_busy", "usage"] {
         let d = rank(name, &empty).unwrap();
         assert_eq!(
