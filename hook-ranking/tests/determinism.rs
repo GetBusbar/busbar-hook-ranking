@@ -6,8 +6,8 @@
 //! lib.rs`, `rank_ascending_by` / `rank_descending_by`) breaks the tie by `idx` — the candidate's
 //! stable slot in the input slice — via `.then(ia.cmp(ib))` in the sort comparator. That is a
 //! total, deterministic secondary key: it is NOT influenced by `HashMap` iteration order, thread
-//! scheduling, or any other nondeterministic source, because `DecodedCandidate` and the ranking function
-//! operate over a plain `&[DecodedCandidate<'_>]` slice, never a hash-keyed collection.
+//! scheduling, or any other nondeterministic source, because `Candidate` and the ranking function
+//! operate over a plain `&[Candidate]` slice, never a hash-keyed collection.
 //!
 //! This test builds candidates that tie on every native's primary ranking signal (equal cost,
 //! equal latency, equal concurrency headroom, equal rate headroom) and asserts:
@@ -18,26 +18,19 @@
 //! `rank` is the entry point the door's `decide` calls, so exercising it is the most representative
 //! path.
 
-use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
-use busbar_hook_ranking::rank;
+use busbar_hook_ranking::{rank, Candidate, Verdict};
 
-fn cand_tied(idx: usize, rate: Option<f64>) -> DecodedCandidate<'static> {
-    DecodedCandidate {
+fn cand_tied(idx: usize, rate: Option<f64>) -> Candidate {
+    Candidate {
         idx,
-        model: "m".into(),
-        provider: "p".into(),
         weight: 1,
-        context_max: None,
-        tier: None,
         // Identical primary key for cheapest/fastest across every candidate.
         cost_per_mtok: Some(7.0),
-        tags: Vec::new(),
         latency_ms: Some(50.0),
         // Identical primary key for least_busy across every candidate.
         available_concurrency: 4,
         budget_remaining: None,
         rate_headroom: rate,
-        signals: Default::default(),
     }
 }
 
@@ -77,17 +70,17 @@ fn ranking_is_deterministic_under_full_ties_across_all_signal_natives() {
 fn partial_tie_group_is_ordered_by_idx_within_the_group() {
     let cands = [
         // idx 5 and idx 2 tie on cost (3.0); idx 9 is strictly cheaper.
-        DecodedCandidate {
+        Candidate {
             idx: 5,
             cost_per_mtok: Some(3.0),
             ..cand_tied(5, None)
         },
-        DecodedCandidate {
+        Candidate {
             idx: 9,
             cost_per_mtok: Some(1.0),
             ..cand_tied(9, None)
         },
-        DecodedCandidate {
+        Candidate {
             idx: 2,
             cost_per_mtok: Some(3.0),
             ..cand_tied(2, None)

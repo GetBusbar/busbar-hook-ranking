@@ -17,6 +17,6 @@ crate-type = ["rlib"]
 [dependencies]
 # The ONE busbar crate a plugin names (the plugin SDK is `busbar_contract::abi::sdk`). Pinned by
 # git rev to the busbar commit in `.busbar-ref`.
-busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "aa45738df3080c782f694b4668ed6729525bee69" }
 # The settings document `open` reads (already in the contract's closure).
 serde_json = "1"
