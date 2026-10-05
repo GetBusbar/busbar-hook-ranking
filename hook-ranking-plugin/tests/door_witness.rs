@@ -5,8 +5,8 @@
 //! one contract, one loading path), and RANKING NEVER PENDS (ARCHITECT Q-SO9).
 //!
 //! * [`the_linked_and_the_dropped_in_door_rank_every_shape_the_same`]: the linked door
-//!   (`linked::door`) and this crate's dropped-in image (the `ranking_door` example, the same door
-//!   behind `export_door!`), each admitted through the one loader, run ONE script — a refused open,
+//!   (`linked::door`) and this crate's dropped-in image (its built cdylib, the same door behind
+//!   `export_door!`), each admitted through the one loader, run ONE script — a refused open,
 //!   then every strategy word opened and asked to `decide` over every candidate shape the ranking
 //!   parity cases use. The two transcripts (outcome, verbs, the order written) must be identical.
 //! * RED ARM, kept: [`red_a_door_that_ranks_the_other_way_answers_differently`] runs the same script
@@ -31,7 +31,7 @@ use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{Decoded, Hook as HookImpl, HookOpen, Verdict};
 use busbar_contract::hooks::{Candidate, RoutingContext, RoutingRequest};
 use busbar_contract::SignalBag;
-use busbar_hooks_ranking::WORDS;
+use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
     in_head, load_dropped, load_linked, out_head, rendering_of, Bind, DispatchConfig, Dispatcher,
@@ -56,26 +56,16 @@ fn linked_row(door: DoorFn, d: &Dispatcher) -> Plugin<Hook> {
 
 /// The linked door, bound on `d`.
 fn linked(d: &Dispatcher) -> Plugin<Hook> {
-    linked_row(busbar_hooks_ranking::linked::door, d)
+    linked_row(busbar_hook_ranking::linked::door, d)
 }
 
-/// This crate's dropped-in image, the `ranking_door` example `cargo test` builds, admitted against
-/// the Statement the linked door renders. A missing artifact is a failure, never a skip: this test
-/// IS the dropped-in door's proof.
+/// This crate's dropped-in image, the cdylib `cargo test` builds (`busbar_hook_ranking_plugin`),
+/// admitted against the Statement the linked door renders. A missing artifact is a failure, never a
+/// skip: this test IS the dropped-in door's proof.
 fn dropped(d: &Dispatcher) -> Plugin<Hook> {
-    let exe = std::env::current_exe().expect("the test binary has a path");
-    let examples = exe
-        .parent()
-        .and_then(|d| d.parent())
-        .expect("target/<profile>")
-        .join("examples");
-    let file = busbar_plugin_loader::plugin_library_filename("ranking_door");
-    let path = [examples.join(&file), examples.join("deps").join(&file)]
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| panic!("the ranking_door example ({file}) is not built"));
+    let path = busbar_plugin_loader::conformance::cdylib_of("busbar_hook_ranking_plugin");
     let stated =
-        rendering_of(busbar_hooks_ranking::linked::door).expect("the door renders its Statement");
+        rendering_of(busbar_hook_ranking::linked::door).expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
@@ -245,14 +235,14 @@ mod reversed {
 
     impl HookOpen for Open {
         fn open(settings: &str) -> Result<Box<dyn HookImpl>, String> {
-            busbar_hooks_ranking::door::Open::open(settings)
+            busbar_hook_ranking::door::Open::open(settings)
                 .map(|h| Box::new(Reversed(h)) as Box<dyn HookImpl>)
         }
     }
 
     busbar_contract::hook_door! {
         open: Open,
-        statement: busbar_hooks_ranking::door::STATEMENT,
+        statement: busbar_hook_ranking::door::STATEMENT,
     }
 }
 

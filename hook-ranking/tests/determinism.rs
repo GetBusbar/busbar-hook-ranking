@@ -19,7 +19,7 @@
 //! path.
 
 use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
-use busbar_hooks_ranking::rank;
+use busbar_hook_ranking::rank;
 
 fn cand_tied(idx: usize, rate: Option<f64>) -> DecodedCandidate<'static> {
     DecodedCandidate {
