@@ -150,8 +150,14 @@ pub const WORDS: [&str; 4] = [
     POLICY_NAME_USAGE,
 ];
 
-/// The package name a signed tarball of this plugin states (`manifest.name`).
-pub const NAME: &str = "busbar-hook-ranking";
+/// The plugin's name: its Statement's, and the linked row's.
+pub const NAME: &str = "hooks-ranking";
+
+/// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
+/// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
+pub mod linked {
+    pub use crate::door::door;
+}
 
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
