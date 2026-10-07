@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Busbar Inc and contributors
 
-//! Tests for `hook-ranking/src/lib.rs`.
+//! Tests for `crates/hooks-ranking/src/lib.rs`.
 
 use super::*;
 

@@ -1,0 +1,66 @@
+{
+  "settings": { "policy": "cheapest" },
+  "hook": {
+    "bad_settings": ["not json", "[\"cheapest\"]", "null"],
+    "order_cap": 2,
+    "requests": [
+      {
+        "label": "rank: cheapest over three",
+        "op": "decide",
+        "candidates": [
+          { "idx": 3, "cost_per_mtok": 5.0, "latency_ms": 200.0, "available_concurrency": 2, "rate_headroom": 0.2 },
+          { "idx": 9, "cost_per_mtok": 2.0, "latency_ms": 50.0, "available_concurrency": 1 },
+          { "idx": 7, "latency_ms": 90.0, "available_concurrency": 4, "rate_headroom": 0.8 }
+        ],
+        "expect": { "verb": "prefer", "order": [9, 3, 7] }
+      },
+      {
+        "label": "abstain: no cost signal",
+        "op": "decide",
+        "candidates": [
+          { "idx": 3, "latency_ms": 200.0, "available_concurrency": 2 },
+          { "idx": 9, "latency_ms": 50.0, "available_concurrency": 1 }
+        ],
+        "expect": { "verb": "abstain" }
+      },
+      {
+        "label": "rank: cheapest over two",
+        "op": "decide",
+        "candidates": [
+          { "idx": 3, "cost_per_mtok": 5.0, "available_concurrency": 2 },
+          { "idx": 9, "cost_per_mtok": 2.0, "available_concurrency": 1 }
+        ],
+        "expect": { "verb": "prefer", "order": [9, 3] }
+      },
+      {
+        "label": "transform: nothing to rewrite",
+        "op": "transform",
+        "candidates": [],
+        "expect": { "verb": "abstain" }
+      },
+      {
+        "label": "rank: cheapest over three, again",
+        "op": "decide",
+        "candidates": [
+          { "idx": 3, "cost_per_mtok": 5.0, "latency_ms": 200.0, "available_concurrency": 2, "rate_headroom": 0.2 },
+          { "idx": 9, "cost_per_mtok": 2.0, "latency_ms": 50.0, "available_concurrency": 1 },
+          { "idx": 7, "latency_ms": 90.0, "available_concurrency": 4, "rate_headroom": 0.8 }
+        ],
+        "expect": { "verb": "prefer", "order": [9, 3, 7] }
+      }
+    ],
+    "refresh": {
+      "settings": { "policy": "fastest" },
+      "request": {
+        "label": "rank: fastest over three",
+        "op": "decide",
+        "candidates": [
+          { "idx": 3, "cost_per_mtok": 5.0, "latency_ms": 200.0, "available_concurrency": 2, "rate_headroom": 0.2 },
+          { "idx": 9, "cost_per_mtok": 2.0, "latency_ms": 50.0, "available_concurrency": 1 },
+          { "idx": 7, "latency_ms": 90.0, "available_concurrency": 4, "rate_headroom": 0.8 }
+        ],
+        "expect": { "verb": "prefer", "order": [9, 7, 3] }
+      }
+    }
+  }
+}

@@ -2,21 +2,24 @@
 [package]
 name = "busbar-hook-ranking"
 version = "1.6.0"
-publish = false            # a first-party plugin crate; shipped linked into busbar or as a signed tarball
-edition = "2021"
-rust-version = "1.97"
-description = "The ranking hook: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
-license = "Apache-2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The ranking hook for busbar: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
 
 [lib]
-# rlib: the LINKED door (`door::door`), which a busbar build names as a compiled-in row. The
-# dropped-in door is the sibling `busbar-hook-ranking-plugin` cdylib, which exports this same door
-# as its one symbol; this crate exports none.
+# rlib: the LINKED door, which a busbar build names as a compiled-in row (`linked::door`, the root's
+# `hooks-ranking` row on the hook axis). The dropped-in door is the sibling
+# `busbar-hook-ranking-plugin` cdylib, which exports this same door as its one symbol; this crate
+# exports none.
 crate-type = ["rlib"]
 
+# DEPENDENCY POLICY. A plugin's busbar closure is busbar-contract and nothing else; third-party crates
+# come from the workspace table (`{ workspace = true }`), which is busbar's dependency policy. No
+# plugin opens its own socket, dials, binds or does TLS: a connection is a declared need the kernel
+# serves through the connector.
 [dependencies]
-# The ONE busbar crate a plugin names (the plugin SDK is `busbar_contract::abi::sdk`). Pinned by
-# git rev to the busbar commit in `.busbar-ref`.
-busbar-contract = { git = "https://github.com/GetBusbar/busbar", rev = "1641592f710081c3519c5452e06c05cf2f22a470" }
+busbar-contract = { workspace = true }
 # The settings document `open` reads (already in the contract's closure).
-serde_json = "1"
+serde_json = { workspace = true }
