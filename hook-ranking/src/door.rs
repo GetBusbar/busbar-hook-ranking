@@ -15,14 +15,17 @@
 use std::task::Poll;
 
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
-use busbar_contract::abi::mechanism::door::{MarkWord, Statement, MARK_WORD_HOOK};
+use busbar_contract::abi::mechanism::call::AbiStr;
+use busbar_contract::abi::mechanism::door::{
+    MarkWord, Rewrite, Statement, MARK_WORD_HOOK, REWRITE_ALIAS,
+};
 use busbar_contract::abi::sdk::door::{abi_str, statement};
 use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{
     statement_with_tail, tail, Decoded, Hook, HookOpen, Verdict,
 };
 
-use crate::{rank, NAME, WORDS};
+use crate::{rank, ALIASES, NAME, WORDS};
 
 /// How many ops one instance holds in flight; the host clamps. Ranking is CPU-only.
 pub const MAX_INFLIGHT: u32 = 64;
@@ -46,10 +49,28 @@ const MARKS: &[MarkWord] = &[
     word(WORDS[3]),
 ];
 
-/// THE STATEMENT: name, version, the hook tail and the four claimed words.
+const fn alias(w: &'static str) -> Rewrite {
+    Rewrite {
+        class: REWRITE_ALIAS,
+        _reserved: 0,
+        from: abi_str(w),
+        // An alias moves no key: its `to` is absent (`check_rewrites`).
+        to: AbiStr {
+            ptr: std::ptr::null(),
+            len: 0,
+        },
+    }
+}
+
+/// The names config may also give the plugin, one alias rewrite each ([`ALIASES`]).
+pub(crate) const REWRITES: &[Rewrite] = &[alias(ALIASES[0]), alias(ALIASES[1])];
+
+/// THE STATEMENT: name, version, the hook tail, the four claimed words and the plugin's aliases.
 pub const STATEMENT: Statement = Statement {
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
+    rewrites: REWRITES.as_ptr(),
+    rewrites_len: REWRITES.len(),
     ..statement_with_tail(
         statement(NAME, env!("CARGO_PKG_VERSION"), MAX_INFLIGHT),
         TAIL,

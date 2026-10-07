@@ -269,3 +269,26 @@ fn usage_ranks_a_nan_headroom_last_and_abstains_when_all_are_nan() {
     let d = rank("usage", &all_nan).unwrap();
     assert_eq!(d, Verdict::Abstain);
 }
+
+/// ONE IDENTITY BY BOTH DOORS (ARCHITECT ruling C'): the Statement's name is the canonical name the
+/// release manifest carries (the repo), and the names config gave the plugin before it (`hooks-ranking`,
+/// the in-tree crate's; `ranking`, the manifest alias) are its alias rewrites, each with no `to`.
+#[test]
+fn the_statement_names_the_canonical_plugin_and_aliases_its_other_names() {
+    use busbar_contract::abi::mechanism::door::REWRITE_ALIAS;
+    assert_eq!(NAME, "busbar-hook-ranking");
+    assert_eq!(ALIASES, ["hooks-ranking", "ranking"]);
+    let s = door::STATEMENT;
+    assert_eq!(s.name.len, NAME.len());
+    assert_eq!(
+        s.rewrites,
+        door::REWRITES.as_ptr(),
+        "the Statement states the alias rewrites"
+    );
+    assert_eq!(s.rewrites_len, ALIASES.len());
+    for (r, a) in door::REWRITES.iter().zip(ALIASES) {
+        assert_eq!(r.class, REWRITE_ALIAS);
+        assert_eq!(r.from.len, a.len(), "{a}");
+        assert_eq!(r.to.len, 0, "an alias moves no key");
+    }
+}

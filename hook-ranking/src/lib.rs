@@ -150,8 +150,15 @@ pub const WORDS: [&str; 4] = [
     POLICY_NAME_USAGE,
 ];
 
-/// The plugin's name: its Statement's, and the linked row's.
-pub const NAME: &str = "hooks-ranking";
+/// The plugin's name: its Statement's, and the linked row's. It is the canonical name the release
+/// manifest carries (plugins.yaml `manifest_name`, the repo), so the plugin has one identity whichever
+/// door it arrives by (ARCHITECT ruling C', one identity by both doors).
+pub const NAME: &str = "busbar-hook-ranking";
+
+/// The other names config may give this plugin: the name its in-tree crate carried (`hooks-ranking`,
+/// still answered), and the release manifest's alias (`ranking`). Stated as Statement aliases, so the
+/// linked row and the dropped-in image answer exactly the same words.
+pub const ALIASES: [&str; 2] = ["hooks-ranking", "ranking"];
 
 /// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
 /// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
