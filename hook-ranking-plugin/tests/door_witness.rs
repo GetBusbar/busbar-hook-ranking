@@ -34,8 +34,8 @@ use busbar_contract::SignalBag;
 use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
-    in_head, load_dropped, load_linked, out_head, rendering_of, Bind, DispatchConfig, Dispatcher,
-    Frame, LinkedRow, NoSink, Plugin,
+    in_head, load_dropped, load_linked, out_head, rendering_of, Bind, ConnTable, DispatchConfig,
+    Dispatcher, Frame, LinkedRow, NoSink, Plugin,
 };
 
 fn bind(d: &Dispatcher) -> Bind {
@@ -44,7 +44,7 @@ fn bind(d: &Dispatcher) -> Bind {
         max_inflight_cap: 64,
         sink: Arc::new(NoSink),
         dispatcher: d.adopter(),
-        conns: None,
+        conns: ConnTable::NoNeeds,
     }
 }
 
@@ -112,6 +112,7 @@ fn request() -> RoutingRequest<'static> {
         prompt: None,
         identity: None,
         signals: SignalBag::new(),
+        session: None,
     }
 }
 
