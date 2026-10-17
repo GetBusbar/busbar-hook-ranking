@@ -232,21 +232,19 @@ fn fastest_orders_by_latency_demoting_unknown() {
 /// allowed to panic on. It ranks as an ABSENT signal instead: demoted behind every real number,
 /// still reachable, and in the same order every run.
 #[test]
-fn cheapest_treats_a_non_finite_key_as_an_absent_signal() {
+fn cheapest_treats_a_nan_key_as_an_absent_signal() {
     let cands = [
         cand(0, Some(1.0), None, 1, None),
         cand(1, Some(f64::NAN), None, 1, None),
         cand(2, Some(0.5), None, 1, None),
         cand(3, Some(f64::INFINITY), None, 1, None),
     ];
-    let expected = Verdict::Prefer(vec![2, 0, 1, 3]);
+    // The infinity is a cost (1.5.5 ordered it); the NaN is absent.
+    let expected = Verdict::Prefer(vec![2, 0, 3, 1]);
     // Same answer every run: an order that depends on the comparator's accidents is not an order.
     for _ in 0..16 {
         let d = rank("cheapest", &cands).unwrap();
-        assert_eq!(
-            d, expected,
-            "a non-finite key must rank as absent, every run"
-        );
+        assert_eq!(d, expected, "a NaN key must rank as absent, every run");
     }
 }
 

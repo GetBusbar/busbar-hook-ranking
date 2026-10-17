@@ -8,8 +8,9 @@
 //! floor (the name stays in [`rank`] as the explicit Abstaining form).
 //!
 //! All rankings are SYNC and never touch async or I/O. A key that is absent, or present but not
-//! orderable (`NaN`, infinite), ranks as an absent signal: demoted to the end, still reachable;
-//! when EVERY candidate lacks a usable key the answer is `Abstain` (no opinion, default SWRR).
+//! orderable (`NaN`), ranks as an absent signal: demoted to the end, still reachable; when EVERY
+//! candidate lacks a usable key the answer is `Abstain` (no opinion, default SWRR). An infinity is
+//! orderable and ranks as 1.5.5 ranked it.
 //! Ties break by `idx`, so an order is the same on every call.
 
 #![forbid(unsafe_code)]
@@ -45,8 +46,10 @@ trait RankKey: PartialOrd + Copy {
 }
 
 impl RankKey for f64 {
+    /// Every value but `NaN`: an infinity is ordered by `partial_cmp` as 1.5.5's ranking ordered it
+    /// (a port keeps 1.5.5's behaviour, THE DESIGN §2).
     fn usable(&self) -> bool {
-        self.is_finite()
+        !self.is_nan()
     }
 }
 
