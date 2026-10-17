@@ -232,21 +232,19 @@ fn fastest_orders_by_latency_demoting_unknown() {
 /// allowed to panic on. It ranks as an ABSENT signal instead: demoted behind every real number,
 /// still reachable, and in the same order every run.
 #[test]
-fn cheapest_treats_a_non_finite_key_as_an_absent_signal() {
+fn cheapest_treats_a_nan_key_as_an_absent_signal() {
     let cands = [
         cand(0, Some(1.0), None, 1, None),
         cand(1, Some(f64::NAN), None, 1, None),
         cand(2, Some(0.5), None, 1, None),
         cand(3, Some(f64::INFINITY), None, 1, None),
     ];
-    let expected = Verdict::Prefer(vec![2, 0, 1, 3]);
+    // The infinity is a cost (1.5.5 ordered it); the NaN is absent.
+    let expected = Verdict::Prefer(vec![2, 0, 3, 1]);
     // Same answer every run: an order that depends on the comparator's accidents is not an order.
     for _ in 0..16 {
         let d = rank("cheapest", &cands).unwrap();
-        assert_eq!(
-            d, expected,
-            "a non-finite key must rank as absent, every run"
-        );
+        assert_eq!(d, expected, "a NaN key must rank as absent, every run");
     }
 }
 
@@ -268,4 +266,39 @@ fn usage_ranks_a_nan_headroom_last_and_abstains_when_all_are_nan() {
     ];
     let d = rank("usage", &all_nan).unwrap();
     assert_eq!(d, Verdict::Abstain);
+}
+
+/// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
+/// with `partial_cmp`, and an infinity is orderable: `cheapest` put an infinite cost behind every
+/// finite one and ahead of a member with no cost, and preferred it over an absent signal rather than
+/// abstaining. A port keeps 1.5.5's behaviour (THE DESIGN §2, "A port keeps 1.5.5's surface"); only
+/// a NaN, which has no order at all, ranks as absent.
+#[test]
+fn an_infinite_signal_ranks_as_1_5_5_ranked_it() {
+    let cands = [
+        cand(0, Some(f64::INFINITY), None, 1, None),
+        cand(1, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1]),
+        "an infinite cost is a cost, not an absent one"
+    );
+    let cands = [
+        cand(0, Some(f64::INFINITY), None, 1, None),
+        cand(1, Some(2.0), None, 1, None),
+        cand(2, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![1, 0, 2])
+    );
+    let cands = [
+        cand(0, None, Some(f64::INFINITY), 1, None),
+        cand(1, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("fastest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
 }
