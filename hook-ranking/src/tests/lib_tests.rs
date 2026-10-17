@@ -269,3 +269,38 @@ fn usage_ranks_a_nan_headroom_last_and_abstains_when_all_are_nan() {
     let d = rank("usage", &all_nan).unwrap();
     assert_eq!(d, Verdict::Abstain);
 }
+
+/// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
+/// with `partial_cmp`, and an infinity is orderable: `cheapest` put an infinite cost behind every
+/// finite one and ahead of a member with no cost, and preferred it over an absent signal rather than
+/// abstaining. A port keeps 1.5.5's behaviour (THE DESIGN §2, "A port keeps 1.5.5's surface"); only
+/// a NaN, which has no order at all, ranks as absent.
+#[test]
+fn an_infinite_signal_ranks_as_1_5_5_ranked_it() {
+    let cands = [
+        cand(0, Some(f64::INFINITY), None, 1, None),
+        cand(1, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1]),
+        "an infinite cost is a cost, not an absent one"
+    );
+    let cands = [
+        cand(0, Some(f64::INFINITY), None, 1, None),
+        cand(1, Some(2.0), None, 1, None),
+        cand(2, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![1, 0, 2])
+    );
+    let cands = [
+        cand(0, None, Some(f64::INFINITY), 1, None),
+        cand(1, None, None, 1, None),
+    ];
+    assert_eq!(
+        rank("fastest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
+}
