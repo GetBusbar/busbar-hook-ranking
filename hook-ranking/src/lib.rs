@@ -37,9 +37,9 @@ const POLICY_NAME_USAGE: &str = "usage";
 /// `1.0 < 0.5` is false), which is precisely the input `sort_by` is documented to be allowed to
 /// panic on — a hard 500 on the routing path from one division-by-zero in a telemetry EWMA.
 ///
-/// So a key is `usable` or it is not, and an unusable one is treated exactly like an ABSENT signal:
-/// demoted to the end but still reachable, which is already what the ranking does for a member whose
-/// signal has not arrived yet. "This number means nothing" and "there is no number" are the same
+/// So a key is `usable` or it is not, and an unusable one is ORDERED like an absent signal: demoted to
+/// the end but still reachable, which is already what the ranking does for a member whose signal has
+/// not arrived yet. It still counts as stated: only an absent signal on every member abstains. "This number means nothing" and "there is no number" are the same
 /// statement to a router.
 trait RankKey: PartialOrd + Copy {
     fn usable(&self) -> bool;
@@ -62,8 +62,8 @@ impl RankKey for usize {
 /// Rank candidates by a total-order key, ascending (smallest key first). Candidates whose key is
 /// `None` — or is present but not orderable, see [`RankKey`] — are demoted to the end (lowest
 /// preference) but still ranked among themselves by `idx` for determinism; never dropped, so a
-/// member with missing signal data is reachable, not stranded. Returns `Abstain` if EVERY candidate
-/// lacks a usable signal (no opinion → default SWRR).
+/// member with missing signal data is reachable, not stranded. Returns `Abstain` if the signal is
+/// ABSENT on every candidate (no opinion → default SWRR); a stated but unorderable one still ranks.
 fn rank_ascending_by<K: RankKey>(
     candidates: &[DecodedCandidate<'_>],
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
