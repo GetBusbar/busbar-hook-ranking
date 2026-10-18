@@ -7,11 +7,12 @@
 //! claims. `weighted` is NOT a word of this plugin: it is the engine's non-removable inline SWRR
 //! floor (the name stays in [`rank`] as the explicit Abstaining form).
 //!
-//! All rankings are SYNC and never touch async or I/O. A key that is absent, or present but not
-//! orderable (`NaN`), is ordered as an absent signal: demoted to the end, still reachable. Only
-//! when the signal is ABSENT on every candidate is the answer `Abstain` (no opinion, default SWRR);
-//! an all-`NaN` pool states a key, so it ranks by `idx` as 1.5.5 ranked it. An infinity is
-//! orderable and ranks as 1.5.5 ranked it.
+//! All rankings are SYNC and never touch async or I/O, and rank exactly as 1.5.5 did (hook
+//! behaviour is frozen at 1.5.5; v1.5.5 `crates/hooks-ranking/src/lib.rs:64-106`). An absent key is
+//! demoted to the end, still reachable; a key that is not orderable (`NaN`) compares equal to every
+//! key (1.5.5's `partial_cmp(..).unwrap_or(Equal)`, `:76-79`), so the index decides; an infinity is
+//! ordered by `partial_cmp`. Only when the signal is ABSENT on every candidate is the answer
+//! `Abstain` (no opinion, default SWRR); an all-`NaN` pool states a key, so it ranks by `idx`.
 //! Ties break by `idx`, so an order is the same on every call.
 
 #![forbid(unsafe_code)]
@@ -30,57 +31,26 @@ const POLICY_NAME_FASTEST: &str = "fastest";
 const POLICY_NAME_LEAST_BUSY: &str = "least_busy";
 const POLICY_NAME_USAGE: &str = "usage";
 
-/// A ranking key that can be put in a TOTAL order. The float signals a routing policy ranks by
-/// (`cost_per_mtok`, `latency_ms`, `rate_headroom`) arrive from operator config and from measured
-/// telemetry, and a float has one value that is not orderable at all: `NaN` compares false against
-/// everything, including itself. A comparator that reaches for `partial_cmp().unwrap_or(Equal)` on a
-/// `NaN` is not merely arbitrary, it is NON-TRANSITIVE (`NaN == 1.0` and `NaN == 0.5` while
-/// `1.0 < 0.5` is false), which is precisely the input `sort_by` is documented to be allowed to
-/// panic on — a hard 500 on the routing path from one division-by-zero in a telemetry EWMA.
-///
-/// So a key is `usable` or it is not, and an unusable one is ORDERED like an absent signal: demoted to
-/// the end but still reachable, which is already what the ranking does for a member whose signal has
-/// not arrived yet. It still counts as stated: only an absent signal on every member abstains. "This number means nothing" and "there is no number" are the same
-/// statement to a router.
-trait RankKey: PartialOrd + Copy {
-    fn usable(&self) -> bool;
-}
-
-impl RankKey for f64 {
-    /// Every value but `NaN`: an infinity is ordered by `partial_cmp` as 1.5.5's ranking ordered it
-    /// (a port keeps 1.5.5's behaviour, THE DESIGN §2).
-    fn usable(&self) -> bool {
-        !self.is_nan()
-    }
-}
-
-impl RankKey for usize {
-    fn usable(&self) -> bool {
-        true // an integer signal has no unorderable value
-    }
-}
-
-/// Rank candidates by a total-order key, ascending (smallest key first). Candidates whose key is
-/// `None` — or is present but not orderable, see [`RankKey`] — are demoted to the end (lowest
-/// preference) but still ranked among themselves by `idx` for determinism; never dropped, so a
-/// member with missing signal data is reachable, not stranded. Returns `Abstain` if the signal is
-/// ABSENT on every candidate (no opinion → default SWRR); a stated but unorderable one still ranks.
-fn rank_ascending_by<K: RankKey>(
+/// Rank candidates by a key, ascending (smallest key first), exactly as 1.5.5 ranked them (v1.5.5
+/// `crates/hooks-ranking/src/lib.rs:64-85`; hook behaviour is frozen at 1.5.5). Candidates whose key
+/// is `None` are demoted to the end (lowest preference) but still ranked among themselves by `idx`;
+/// never dropped, so a member with missing signal data is reachable, not stranded. A key `partial_cmp`
+/// cannot order (`NaN`) compares EQUAL to every key, as 1.5.5's `unwrap_or(Equal)` made it
+/// (`:76-79`), so the index breaks the tie. Returns `Abstain` if the signal is ABSENT on every
+/// candidate (no opinion → default SWRR).
+fn rank_ascending_by<K: PartialOrd + Copy>(
     candidates: &[DecodedCandidate<'_>],
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
-    let mut keyed: Vec<(usize, Option<K>)> = candidates
-        .iter()
-        .map(|c| (c.idx, usable_key(&key, c)))
-        .collect();
-    // Abstain only when the signal is ABSENT on every candidate: a stated but unorderable key
-    // (`NaN`) is demoted, never an abstention, so an all-`NaN` pool ranks by index as 1.5.5 did.
-    if candidates.iter().all(|c| key(c).is_none()) {
+    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
+    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule): an all-`NaN` pool
+    // states the signal, so it ranks by index as 1.5.5 did.
+    if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
     }
     // Sort: Some(k) before None; among Some, ascending by k; ties (and None/None) by idx for a
-    // deterministic, stable order. Every surviving `Some` is orderable (the extractor dropped the
-    // rest), so `partial_cmp` genuinely cannot yield None; the fallback stays as belt-and-braces.
+    // deterministic, stable order. A `NaN` compares Equal to every key (v1.5.5 lib.rs:76-79), so
+    // the index decides, byte for byte the order 1.5.5 answered.
     keyed.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
         (Some(a), Some(b)) => a
             .partial_cmp(b)
@@ -93,28 +63,16 @@ fn rank_ascending_by<K: RankKey>(
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
 }
 
-/// The key extractor made TOTAL: a signal that is present but not orderable is reported as absent,
-/// so the comparator below only ever sees keys it can actually order. See [`RankKey`].
-fn usable_key<K: RankKey>(
-    key: &impl Fn(&DecodedCandidate<'_>) -> Option<K>,
-    candidate: &DecodedCandidate<'_>,
-) -> Option<K> {
-    key(candidate).filter(|k| k.usable())
-}
-
 /// Rank descending (largest key first) — the same shape as `rank_ascending_by` but preferring the
 /// LARGEST signal (e.g. most free concurrency, most budget remaining).
-fn rank_descending_by<K: RankKey>(
+fn rank_descending_by<K: PartialOrd + Copy>(
     candidates: &[DecodedCandidate<'_>],
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
-    let mut keyed: Vec<(usize, Option<K>)> = candidates
-        .iter()
-        .map(|c| (c.idx, usable_key(&key, c)))
-        .collect();
-    // Abstain only when the signal is ABSENT on every candidate: a stated but unorderable key
-    // (`NaN`) is demoted, never an abstention, so an all-`NaN` pool ranks by index as 1.5.5 did.
-    if candidates.iter().all(|c| key(c).is_none()) {
+    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
+    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule): an all-`NaN` pool
+    // states the signal, so it ranks by index as 1.5.5 did.
+    if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
     }
     keyed.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
