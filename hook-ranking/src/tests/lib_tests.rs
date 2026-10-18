@@ -227,45 +227,49 @@ fn fastest_orders_by_latency_demoting_unknown() {
     assert_eq!(d, Verdict::Prefer(vec![2, 0, 1]));
 }
 
-/// A NaN cost is not a cheap candidate, an expensive one, or a tie — it is not ORDERABLE, and a
-/// comparator that folds it to `Equal` is non-transitive, which is exactly the input `sort_by` is
-/// allowed to panic on. It ranks as an ABSENT signal instead: demoted behind every real number,
-/// still reachable, and in the same order every run.
+/// A `NaN` KEY RANKS AS 1.5.5 RANKED IT, byte for byte (hook behaviour is frozen at 1.5.5): 1.5.5
+/// compared every present key with `partial_cmp(..).unwrap_or(Equal)` (v1.5.5
+/// `crates/hooks-ranking/src/lib.rs:76-79` ascending, `:98-101` descending), so a `NaN` ties every
+/// key and the index breaks the tie. For costs `[2.0, NaN, 1.0]` that is `[0, 1, 2]`. RED before the
+/// fix: a `NaN` was read as an absent signal and demoted, `[2, 0, 1]`.
 #[test]
-fn cheapest_treats_a_nan_key_as_an_absent_signal() {
+fn a_nan_key_ranks_as_1_5_5_ranked_it() {
+    let cands = [
+        cand(0, Some(2.0), None, 1, None),
+        cand(1, Some(f64::NAN), None, 1, None),
+        cand(2, Some(1.0), None, 1, None),
+    ];
+    for _ in 0..16 {
+        assert_eq!(
+            rank("cheapest", &cands).unwrap(),
+            Verdict::Prefer(vec![0, 1, 2])
+        );
+    }
     let cands = [
         cand(0, Some(1.0), None, 1, None),
         cand(1, Some(f64::NAN), None, 1, None),
         cand(2, Some(0.5), None, 1, None),
         cand(3, Some(f64::INFINITY), None, 1, None),
     ];
-    // The infinity is a cost (1.5.5 ordered it); the NaN is absent.
-    let expected = Verdict::Prefer(vec![2, 0, 3, 1]);
-    // Same answer every run: an order that depends on the comparator's accidents is not an order.
-    for _ in 0..16 {
-        let d = rank("cheapest", &cands).unwrap();
-        assert_eq!(d, expected, "a NaN key must rank as absent, every run");
-    }
-}
-
-/// The same on the descending side, and the abstain boundary with it: a NaN is demoted, and when
-/// every candidate states only a NaN the signal is still STATED, so the policy ranks by index, as
-/// 1.5.5 did (Abstain is only for a signal absent on all).
-#[test]
-fn usage_ranks_a_nan_headroom_last_and_ranks_an_all_nan_pool_by_index() {
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1, 2, 3])
+    );
+    // Descending: a `NaN` headroom ties the stated one, and the index decides.
     let ranked = [
         cand_rate(0, None, None, 1, None, Some(f64::NAN)),
         cand_rate(1, None, None, 1, None, Some(0.25)),
     ];
-    let d = rank("usage", &ranked).unwrap();
-    assert_eq!(d, Verdict::Prefer(vec![1, 0]));
-
+    assert_eq!(rank("usage", &ranked).unwrap(), Verdict::Prefer(vec![0, 1]));
+    // All `NaN`: the signal is stated, so the policy ranks by index (Abstain is for absent only).
     let all_nan = [
         cand_rate(0, None, None, 1, None, Some(f64::NAN)),
         cand_rate(1, None, None, 1, None, Some(f64::NAN)),
     ];
-    let d = rank("usage", &all_nan).unwrap();
-    assert_eq!(d, Verdict::Prefer(vec![0, 1]));
+    assert_eq!(
+        rank("usage", &all_nan).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
 }
 
 /// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
