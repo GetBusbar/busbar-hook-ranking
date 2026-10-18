@@ -313,6 +313,12 @@ fn an_all_nan_pool_ranks_by_index_as_1_5_5_did() {
         cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
         cand(1, Some(f64::NAN), Some(f64::NAN), 1, None),
     ];
-    assert_eq!(rank("cheapest", &cands).unwrap(), Verdict::Prefer(vec![0, 1]));
-    assert_eq!(rank("fastest", &cands).unwrap(), Verdict::Prefer(vec![0, 1]));
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
+    assert_eq!(
+        rank("fastest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
 }

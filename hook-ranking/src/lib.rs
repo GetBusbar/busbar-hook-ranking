@@ -72,7 +72,9 @@ fn rank_ascending_by<K: RankKey>(
         .iter()
         .map(|c| (c.idx, usable_key(&key, c)))
         .collect();
-    if keyed.iter().all(|(_, k)| k.is_none()) {
+    // Abstain only when the signal is ABSENT on every candidate: a stated but unorderable key
+    // (`NaN`) is demoted, never an abstention, so an all-`NaN` pool ranks by index as 1.5.5 did.
+    if candidates.iter().all(|c| key(c).is_none()) {
         return Verdict::Abstain;
     }
     // Sort: Some(k) before None; among Some, ascending by k; ties (and None/None) by idx for a
@@ -109,7 +111,9 @@ fn rank_descending_by<K: RankKey>(
         .iter()
         .map(|c| (c.idx, usable_key(&key, c)))
         .collect();
-    if keyed.iter().all(|(_, k)| k.is_none()) {
+    // Abstain only when the signal is ABSENT on every candidate: a stated but unorderable key
+    // (`NaN`) is demoted, never an abstention, so an all-`NaN` pool ranks by index as 1.5.5 did.
+    if candidates.iter().all(|c| key(c).is_none()) {
         return Verdict::Abstain;
     }
     keyed.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
