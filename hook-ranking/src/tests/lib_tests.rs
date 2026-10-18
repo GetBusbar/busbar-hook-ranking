@@ -248,11 +248,11 @@ fn cheapest_treats_a_nan_key_as_an_absent_signal() {
     }
 }
 
-/// The same ruling on the descending side, and the abstain boundary with it: when the only signals
-/// present are unorderable there is no opinion to express, so the policy abstains to the default
-/// SWRR rather than inventing a ranking out of NaNs.
+/// The same on the descending side, and the abstain boundary with it: a NaN is demoted, and when
+/// every candidate states only a NaN the signal is still STATED, so the policy ranks by index, as
+/// 1.5.5 did (Abstain is only for a signal absent on all).
 #[test]
-fn usage_ranks_a_nan_headroom_last_and_abstains_when_all_are_nan() {
+fn usage_ranks_a_nan_headroom_last_and_ranks_an_all_nan_pool_by_index() {
     let ranked = [
         cand_rate(0, None, None, 1, None, Some(f64::NAN)),
         cand_rate(1, None, None, 1, None, Some(0.25)),
@@ -265,7 +265,7 @@ fn usage_ranks_a_nan_headroom_last_and_abstains_when_all_are_nan() {
         cand_rate(1, None, None, 1, None, Some(f64::NAN)),
     ];
     let d = rank("usage", &all_nan).unwrap();
-    assert_eq!(d, Verdict::Abstain);
+    assert_eq!(d, Verdict::Prefer(vec![0, 1]));
 }
 
 /// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
@@ -297,6 +297,26 @@ fn an_infinite_signal_ranks_as_1_5_5_ranked_it() {
         cand(0, None, Some(f64::INFINITY), 1, None),
         cand(1, None, None, 1, None),
     ];
+    assert_eq!(
+        rank("fastest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
+}
+
+/// AN ALL-`NaN` POOL RANKS BY INDEX, as 1.5.5 ranked it: every candidate states the signal, so the
+/// ranking has an opinion (Abstain is only for a signal ABSENT on all), and with no key it can
+/// order, every one ties and the index decides. RED before the fix: a `NaN` read as absent, so the
+/// pool Abstained.
+#[test]
+fn an_all_nan_pool_ranks_by_index_as_1_5_5_did() {
+    let cands = [
+        cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
+        cand(1, Some(f64::NAN), Some(f64::NAN), 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
     assert_eq!(
         rank("fastest", &cands).unwrap(),
         Verdict::Prefer(vec![0, 1])
