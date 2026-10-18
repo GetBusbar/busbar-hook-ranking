@@ -8,8 +8,9 @@
 //! floor (the name stays in [`rank`] as the explicit Abstaining form).
 //!
 //! All rankings are SYNC and never touch async or I/O. A key that is absent, or present but not
-//! orderable (`NaN`), ranks as an absent signal: demoted to the end, still reachable; when EVERY
-//! candidate lacks a usable key the answer is `Abstain` (no opinion, default SWRR). An infinity is
+//! orderable (`NaN`), is ordered as an absent signal: demoted to the end, still reachable. Only
+//! when the signal is ABSENT on every candidate is the answer `Abstain` (no opinion, default SWRR);
+//! an all-`NaN` pool states a key, so it ranks by `idx` as 1.5.5 ranked it. An infinity is
 //! orderable and ranks as 1.5.5 ranked it.
 //! Ties break by `idx`, so an order is the same on every call.
 
