@@ -323,7 +323,13 @@ fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
             let ks: Vec<Option<f64>> = keys(seed * 977 + n as u64, n, false)
                 .into_iter()
                 .enumerate()
-                .map(|(i, k)| if (seed + i as u64) % 9 == 0 { None } else { k })
+                .map(|(i, k)| {
+                    if (seed + i as u64).is_multiple_of(9) {
+                        None
+                    } else {
+                        k
+                    }
+                })
                 .collect();
             if ks.iter().all(Option::is_none) {
                 continue;
