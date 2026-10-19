@@ -42,10 +42,10 @@ fn cand_rate(
     }
 }
 
+/// `weighted` is not a word of this plugin: the engine's inline SWRR floor is (Q128 NIT).
 #[test]
-fn weighted_native_abstains() {
-    let d = rank("weighted", &[cand(0, None, None, 1, None)]).unwrap();
-    assert_eq!(d, Verdict::Abstain);
+fn weighted_is_not_a_word_of_this_plugin() {
+    assert!(rank("weighted", &[cand(0, None, None, 1, None)]).is_none());
 }
 
 #[test]
@@ -115,12 +115,12 @@ fn usage_all_unknown_abstains() {
     assert_eq!(d, Verdict::Abstain);
 }
 
-/// Every word this plugin claims ranks; `weighted` is the explicit Abstaining form; anything else
-/// is not a strategy of this plugin.
+/// Every word this plugin claims ranks; anything else, `weighted` included, is not a strategy of this
+/// plugin.
 #[test]
 fn rank_knows_its_words_and_no_others() {
     let one = [cand(0, Some(1.0), Some(1.0), 1, None)];
-    assert!(rank("weighted", &one).is_some());
+    assert!(rank("weighted", &one).is_none());
     for word in WORDS {
         assert!(rank(word, &one).is_some(), "{word}");
     }
@@ -139,7 +139,7 @@ fn the_claimed_words_are_the_four_strategies() {
 #[test]
 fn all_natives_abstain_on_empty_pool() {
     let empty: [DecodedCandidate<'_>; 0] = [];
-    for name in ["weighted", "cheapest", "fastest", "least_busy", "usage"] {
+    for name in ["cheapest", "fastest", "least_busy", "usage"] {
         let d = rank(name, &empty).unwrap();
         assert_eq!(
             d,
