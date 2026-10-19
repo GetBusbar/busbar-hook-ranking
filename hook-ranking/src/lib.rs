@@ -5,7 +5,7 @@
 //! the live signals a `decide` view already carries (`Decoded::candidates`). A hook plugin on the
 //! hook kind's memory ABI ([`door`]); the four strategy words are the hook words its Statement
 //! claims. `weighted` is NOT a word of this plugin: it is the engine's non-removable inline SWRR
-//! floor (the name stays in [`rank`] as the explicit Abstaining form).
+//! floor, and the door never ranks it (it claims only [`WORDS`]).
 //!
 //! All rankings are SYNC and never touch async or I/O, and rank exactly as 1.5.5 did on every input
 //! 1.5.5 could be given (hook behaviour is frozen at 1.5.5; v1.5.5
@@ -35,7 +35,6 @@ use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
 // ── Policy-name constants ─────────────────────────────────────────────────────────────────────────
 // Single source of truth for the strategy names: the `rank` match arms and [`WORDS`] (the hook
 // words the Statement claims) both read them.
-const POLICY_NAME_WEIGHTED: &str = "weighted";
 const POLICY_NAME_CHEAPEST: &str = "cheapest";
 const POLICY_NAME_FASTEST: &str = "fastest";
 const POLICY_NAME_LEAST_BUSY: &str = "least_busy";
@@ -102,8 +101,8 @@ fn rank_descending_by<K: PartialOrd + Copy>(
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
 }
 
-/// Rank `candidates` by the strategy `name` (`weighted` is the explicit Abstaining form). `None`
-/// for a word this plugin does not claim.
+/// Rank `candidates` by the strategy `name`, one of [`WORDS`]; `None` for a word this plugin does
+/// not claim (the door answers such a call `Abstain`, no opinion, the default SWRR).
 ///
 /// * `cheapest`: lowest operator-declared `cost_per_mtok`; a member with no cost is demoted.
 /// * `fastest`: lowest measured rolling-EWMA `latency_ms`; a member with no sample is demoted.
@@ -114,7 +113,6 @@ fn rank_descending_by<K: PartialOrd + Copy>(
 #[must_use]
 pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
     Some(match name {
-        POLICY_NAME_WEIGHTED => Verdict::Abstain,
         POLICY_NAME_CHEAPEST => rank_ascending_by(candidates, |c| c.cost_per_mtok),
         POLICY_NAME_FASTEST => rank_ascending_by(candidates, |c| c.latency_ms),
         POLICY_NAME_LEAST_BUSY => rank_descending_by(candidates, |c| Some(c.available_concurrency)),
