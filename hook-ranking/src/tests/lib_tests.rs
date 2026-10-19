@@ -227,40 +227,40 @@ fn fastest_orders_by_latency_demoting_unknown() {
     assert_eq!(d, Verdict::Prefer(vec![2, 0, 1]));
 }
 
-/// A `NaN` KEY RANKS AS 1.5.5 RANKED IT, byte for byte (hook behaviour is frozen at 1.5.5): 1.5.5
-/// compared every present key with `partial_cmp(..).unwrap_or(Equal)` (v1.5.5
-/// `crates/hooks-ranking/src/lib.rs:76-79` ascending, `:98-101` descending), so a `NaN` ties every
-/// key and the index breaks the tie. For costs `[2.0, NaN, 1.0]` that is `[0, 1, 2]`. RED before the
-/// fix: a `NaN` was read as an absent signal and demoted, `[2, 0, 1]`.
+/// A `NaN` KEY SORTS AFTER EVERY NUMBER, as if absent, and all `NaN`s compare equal, so the index
+/// decides among them (coordinator ruling 2026-10-18). 1.5.5's `partial_cmp(..).unwrap_or(Equal)`
+/// (v1.5.5 `crates/hooks-ranking/src/lib.rs:76-79`, `:98-101`) is no total order once a `NaN` sits
+/// among numbers, and no `NaN` ever reached it: every key the natives rank is finite upstream
+/// (see the crate doc). For costs `[2.0, NaN, 1.0]` that is `[2, 0, 1]`. RED before the fix: the
+/// `NaN` tied every key, `[0, 1, 2]`.
 #[test]
-fn a_nan_key_ranks_as_1_5_5_ranked_it() {
+fn a_nan_key_sorts_after_every_number() {
     let cands = [
         cand(0, Some(2.0), None, 1, None),
         cand(1, Some(f64::NAN), None, 1, None),
         cand(2, Some(1.0), None, 1, None),
     ];
-    for _ in 0..16 {
-        assert_eq!(
-            rank("cheapest", &cands).unwrap(),
-            Verdict::Prefer(vec![0, 1, 2])
-        );
-    }
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![2, 0, 1])
+    );
     let cands = [
         cand(0, Some(1.0), None, 1, None),
         cand(1, Some(f64::NAN), None, 1, None),
         cand(2, Some(0.5), None, 1, None),
         cand(3, Some(f64::INFINITY), None, 1, None),
+        cand(4, None, None, 1, None),
     ];
     assert_eq!(
         rank("cheapest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1, 2, 3])
+        Verdict::Prefer(vec![2, 0, 3, 1, 4])
     );
-    // Descending: a `NaN` headroom ties the stated one, and the index decides.
+    // Descending: a `NaN` headroom still sorts after every number.
     let ranked = [
         cand_rate(0, None, None, 1, None, Some(f64::NAN)),
         cand_rate(1, None, None, 1, None, Some(0.25)),
     ];
-    assert_eq!(rank("usage", &ranked).unwrap(), Verdict::Prefer(vec![0, 1]));
+    assert_eq!(rank("usage", &ranked).unwrap(), Verdict::Prefer(vec![1, 0]));
     // All `NaN`: the signal is stated, so the policy ranks by index (Abstain is for absent only).
     let all_nan = [
         cand_rate(0, None, None, 1, None, Some(f64::NAN)),
@@ -270,6 +270,118 @@ fn a_nan_key_ranks_as_1_5_5_ranked_it() {
         rank("usage", &all_nan).unwrap(),
         Verdict::Prefer(vec![0, 1])
     );
+}
+
+/// A deterministic stream of keys (no randomness crate): `n` draws over finite values, both zeros
+/// and both infinities, plus `NaN` and an absent key when `with_nan`.
+fn keys(seed: u64, n: usize, with_nan: bool) -> Vec<Option<f64>> {
+    let mut x = seed;
+    (0..n)
+        .map(|_| {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let pick = (x >> 33) % if with_nan { 10 } else { 8 };
+            match pick {
+                0 => Some(0.0),
+                1 => Some(-0.0),
+                2 => Some(f64::INFINITY),
+                3 => Some(f64::NEG_INFINITY),
+                4..=7 => Some(((x >> 40) % 7) as f64 - 3.0),
+                8 => Some(f64::NAN),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// 1.5.5's comparator over `keys`, ascending (v1.5.5 `crates/hooks-ranking/src/lib.rs:76-85`).
+fn order_1_5_5(keys: &[Option<f64>], descending: bool) -> Vec<usize> {
+    let mut keyed: Vec<(usize, Option<f64>)> = keys.iter().copied().enumerate().collect();
+    keyed.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
+        (Some(a), Some(b)) => if descending {
+            b.partial_cmp(a)
+        } else {
+            a.partial_cmp(b)
+        }
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then(ia.cmp(ib)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => ia.cmp(ib),
+    });
+    keyed.into_iter().map(|(i, _)| i).collect()
+}
+
+/// PARITY ON EVERY REACHABLE INPUT: over pools with no `NaN` (finite keys, `-0.0` and `+0.0`, both
+/// infinities, absent keys), the ranking is 1.5.5's comparator's order, byte for byte, ascending
+/// and descending, at every size across the sort's small-slice boundary.
+#[test]
+fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
+    for seed in 1..=64_u64 {
+        for n in [1, 2, 3, 7, 19, 20, 21, 33, 64, 100] {
+            let ks: Vec<Option<f64>> = keys(seed * 977 + n as u64, n, false)
+                .into_iter()
+                .enumerate()
+                .map(|(i, k)| if (seed + i as u64) % 9 == 0 { None } else { k })
+                .collect();
+            if ks.iter().all(Option::is_none) {
+                continue;
+            }
+            let cost: Vec<_> = ks
+                .iter()
+                .enumerate()
+                .map(|(i, k)| cand(i, *k, None, 1, None))
+                .collect();
+            assert_eq!(
+                rank("cheapest", &cost).unwrap(),
+                Verdict::Prefer(order_1_5_5(&ks, false)),
+                "ascending, seed {seed}, n {n}: {ks:?}"
+            );
+            let rate: Vec<_> = ks
+                .iter()
+                .enumerate()
+                .map(|(i, k)| cand_rate(i, None, None, 1, None, *k))
+                .collect();
+            assert_eq!(
+                rank("usage", &rate).unwrap(),
+                Verdict::Prefer(order_1_5_5(&ks, true)),
+                "descending, seed {seed}, n {n}: {ks:?}"
+            );
+        }
+    }
+}
+
+/// A 64-CANDIDATE POOL WITH `NaN`s IN MIXED POSITIONS RANKS WITHOUT A PANIC, in one order on every
+/// call: the numbers ascending (ties by index), then every `NaN` and absent key by index. RED
+/// before the fix: 1.5.5's comparator is no total order there, so the sort answered another order
+/// (and a sort past the small-slice boundary may panic on it).
+#[test]
+fn a_mixed_nan_pool_of_64_ranks_deterministically() {
+    for seed in 1..=32_u64 {
+        let ks = keys(seed, 64, true);
+        let cands: Vec<_> = ks
+            .iter()
+            .enumerate()
+            .map(|(i, k)| cand(i, *k, None, 1, None))
+            .collect();
+        let mut want: Vec<(usize, Option<f64>)> = ks
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (i, k.filter(|v| !v.is_nan())))
+            .collect();
+        want.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
+            (Some(a), Some(b)) => a.partial_cmp(b).unwrap().then(ia.cmp(ib)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => ia.cmp(ib),
+        });
+        let want = Verdict::Prefer(want.into_iter().map(|(i, _)| i).collect());
+        let got = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            rank("cheapest", &cands).unwrap()
+        }));
+        assert_eq!(got.ok(), Some(want), "seed {seed}: {ks:?}");
+    }
 }
 
 /// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
