@@ -50,7 +50,9 @@ fn key_order<K: PartialOrd>(
     reverse: bool,
 ) -> std::cmp::Ordering {
     use std::cmp::Ordering::{Equal, Greater, Less};
-    let orderable = |k: &Option<K>| k.as_ref().filter(|v| v.partial_cmp(v).is_some());
+    fn orderable<K: PartialOrd>(k: &Option<K>) -> Option<&K> {
+        k.as_ref().filter(|v| v.partial_cmp(v).is_some())
+    }
     let by_key = match (orderable(ka), orderable(kb)) {
         (Some(a), Some(b)) => {
             let (x, y) = if reverse { (b, a) } else { (a, b) };
