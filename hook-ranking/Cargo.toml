@@ -8,6 +8,9 @@ license.workspace = true
 publish.workspace = true
 description = "The ranking hook for busbar: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
 
+[lints]
+workspace = true
+
 [lib]
 # rlib: the LINKED door, which a busbar build names as a compiled-in row (`linked::door`, the root's
 # `hooks-ranking` row on the hook axis). The dropped-in door is the sibling

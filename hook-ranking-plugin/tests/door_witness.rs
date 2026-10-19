@@ -80,6 +80,7 @@ fn open(p: &Plugin<Hook>, settings: &str) -> Outcome {
                 len: settings.len(),
                 fmt: BLOB_JSON,
                 flags: 0,
+                ..Blob::ZERO
             },
             secrets: std::ptr::null(),
             secrets_len: 0,

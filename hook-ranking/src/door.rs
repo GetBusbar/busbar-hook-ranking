@@ -35,6 +35,7 @@ const fn word(w: &'static str) -> MarkWord {
         class: MARK_WORD_HOOK,
         _reserved: 0,
         word: abi_str(w),
+        ..MarkWord::ZERO
     }
 }
 
