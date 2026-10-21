@@ -46,8 +46,17 @@ const MARKS: &[MarkWord] = &[
     word(WORDS[3]),
 ];
 
-/// THE STATEMENT: name, version, the hook tail and the four claimed words.
-pub const STATEMENT: Statement = Statement {
+busbar_contract::statement_extensions!(
+    /// The Statement's extensions: this plugin's whole `declares` document (BUSBAR-1.6.0.md l.246).
+    EXTENSIONS: [(
+        busbar_contract::abi::mechanism::extensions::EXT_DECLARES,
+        include_bytes!("../declares.json"),
+    )]
+);
+
+/// THE STATEMENT: name, version, the hook tail, the four claimed words and the `declares` document.
+const STATEMENT: Statement = Statement {
+    extensions: EXTENSIONS,
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
     ..statement_with_tail(

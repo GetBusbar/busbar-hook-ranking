@@ -27,7 +27,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-pub mod door;
+mod door;
+
+/// THE DOOR: this plugin's one public item (BUSBAR-1.6.0.md l.3567, Crate shape).
+pub use door::door;
 
 use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
 
@@ -104,7 +107,7 @@ fn rank_descending_by<K: PartialOrd + Copy>(
 ///   available this window); a member with no headroom signal is demoted, and every member lacking
 ///   it Abstains (no rate limit in play).
 #[must_use]
-pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
+fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
     Some(match name {
         POLICY_NAME_CHEAPEST => rank_ascending_by(candidates, |c| c.cost_per_mtok),
         POLICY_NAME_FASTEST => rank_ascending_by(candidates, |c| c.latency_ms),
@@ -115,7 +118,7 @@ pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> 
 }
 
 /// The strategy words this plugin claims (its Statement's hook words).
-pub const WORDS: [&str; 4] = [
+const WORDS: [&str; 4] = [
     POLICY_NAME_CHEAPEST,
     POLICY_NAME_FASTEST,
     POLICY_NAME_LEAST_BUSY,
@@ -123,14 +126,14 @@ pub const WORDS: [&str; 4] = [
 ];
 
 /// The plugin's name: its Statement's, and the linked row's.
-pub const NAME: &str = "hooks-ranking";
+const NAME: &str = "hooks-ranking";
 
 /// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
 /// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
-pub mod linked {
-    pub use crate::door::door;
-}
-
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/determinism_tests.rs"]
+mod determinism_tests;

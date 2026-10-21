@@ -5,7 +5,7 @@
 //! one contract, one loading path), and RANKING NEVER PENDS (ARCHITECT Q-SO9).
 //!
 //! * [`the_linked_and_the_dropped_in_door_rank_every_shape_the_same`]: the linked door
-//!   (`linked::door`) and this crate's dropped-in image (its built cdylib, the same door behind
+//!   (`busbar_hook_ranking::door`) and this crate's dropped-in image (its built cdylib, the same door behind
 //!   `export_door!`), each admitted through the one loader, run ONE script — a refused open,
 //!   then every strategy word opened and asked to `decide` over every candidate shape the ranking
 //!   parity cases use. The two transcripts (outcome, verbs, the order written) must be identical.
@@ -31,12 +31,14 @@ use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{Decoded, Hook as HookImpl, HookOpen, Verdict};
 use busbar_contract::hooks::{Candidate, RoutingContext, RoutingRequest};
 use busbar_contract::SignalBag;
-use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
     in_head, load_dropped, load_linked, out_head, rendering_of, Bind, ConnTable, DispatchConfig,
     Dispatcher, Frame, LinkedRow, NoSink, Plugin,
 };
+
+/// The four strategy words the door's Statement claims.
+const WORDS: [&str; 4] = ["cheapest", "fastest", "least_busy", "usage"];
 
 fn bind(d: &Dispatcher) -> Bind {
     Bind {
@@ -56,7 +58,7 @@ fn linked_row(door: DoorFn, d: &Dispatcher) -> Plugin<Hook> {
 
 /// The linked door, bound on `d`.
 fn linked(d: &Dispatcher) -> Plugin<Hook> {
-    linked_row(busbar_hook_ranking::linked::door, d)
+    linked_row(busbar_hook_ranking::door, d)
 }
 
 /// This crate's dropped-in image, the cdylib `cargo test` builds (`busbar_hook_ranking_plugin`),
@@ -65,7 +67,7 @@ fn linked(d: &Dispatcher) -> Plugin<Hook> {
 fn dropped(d: &Dispatcher) -> Plugin<Hook> {
     let path = busbar_plugin_loader::conformance::cdylib_of("busbar_hook_ranking_plugin");
     let stated =
-        rendering_of(busbar_hook_ranking::linked::door).expect("the door renders its Statement");
+        rendering_of(busbar_hook_ranking::door).expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
@@ -213,22 +215,40 @@ fn the_linked_and_the_dropped_in_door_rank_every_shape_the_same() {
     assert_eq!(script(dropped), linked, "the dropped-in door");
 }
 
-/// The ranking door with its verdict REVERSED: the same Statement, the same strategies, every
-/// preferred order read back to front. The red arm's door.
+/// The ranking door with its verdict REVERSED: the same name, hook tail and claimed words, every
+/// strategy word opened, but each decide prefers the candidates last to first. The red arm's door.
 mod reversed {
-    use super::{Decoded, HookImpl, HookOpen, Op, Poll, Verdict};
+    use super::{Decoded, HookImpl, HookOpen, Op, Poll, Verdict, WORDS};
+    use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
+    use busbar_contract::abi::mechanism::door::{MarkWord, Statement, MARK_WORD_HOOK};
+    use busbar_contract::abi::sdk::door::{abi_str, statement};
+    use busbar_contract::abi::sdk::hook::{statement_with_tail, tail};
 
-    struct Reversed(Box<dyn HookImpl>);
+    const TAIL: &Tail = &tail(CLASS_GATE, PROMPT_NO, USER_NO);
+
+    const fn word(w: &'static str) -> MarkWord {
+        MarkWord {
+            class: MARK_WORD_HOOK,
+            _reserved: 0,
+            word: abi_str(w),
+        }
+    }
+
+    const MARKS: &[MarkWord] = &[word(WORDS[0]), word(WORDS[1]), word(WORDS[2]), word(WORDS[3])];
+
+    const STATEMENT: Statement = Statement {
+        mark_words: MARKS.as_ptr(),
+        mark_words_len: MARKS.len(),
+        ..statement_with_tail(statement("hooks-ranking", "1.6.0", 64), TAIL)
+    };
+
+    struct Reversed;
 
     impl HookImpl for Reversed {
-        fn decide(&self, view: &Decoded<'_>, op: &Op<'_>) -> Poll<Verdict> {
-            self.0.decide(view, op).map(|v| match v {
-                Verdict::Prefer(mut order) => {
-                    order.reverse();
-                    Verdict::Prefer(order)
-                }
-                other => other,
-            })
+        fn decide(&self, view: &Decoded<'_>, _: &Op<'_>) -> Poll<Verdict> {
+            let mut order: Vec<usize> = view.candidates.iter().map(|c| c.idx).collect();
+            order.reverse();
+            Poll::Ready(Verdict::Prefer(order))
         }
     }
 
@@ -236,14 +256,19 @@ mod reversed {
 
     impl HookOpen for Open {
         fn open(settings: &str) -> Result<Box<dyn HookImpl>, String> {
-            busbar_hook_ranking::door::Open::open(settings)
-                .map(|h| Box::new(Reversed(h)) as Box<dyn HookImpl>)
+            let doc: serde_json::Value = serde_json::from_str(settings).map_err(|e| e.to_string())?;
+            let word = doc["policy"].as_str().ok_or("settings.policy is required")?;
+            if WORDS.contains(&word) {
+                Ok(Box::new(Reversed))
+            } else {
+                Err(format!("no strategy '{word}'"))
+            }
         }
     }
 
     busbar_contract::hook_door! {
         open: Open,
-        statement: busbar_hook_ranking::door::STATEMENT,
+        statement: STATEMENT,
     }
 }
 
@@ -286,4 +311,15 @@ fn every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending() {
             }
         }
     }
+}
+
+/// The door's Statement carries this plugin's whole `declares` document (BUSBAR-1.6.0.md l.246).
+#[test]
+fn the_statement_carries_the_declares_document() {
+    let row = LinkedRow::of(busbar_hook_ranking::door).unwrap();
+    let read = busbar_contract::abi::mechanism::rendering::read(&row.statement).unwrap();
+    assert_eq!(
+        busbar_contract::abi::mechanism::extensions::declares(&read.extensions.bytes),
+        Some(&include_bytes!("../../hook-ranking/declares.json")[..]),
+    );
 }
