@@ -47,14 +47,11 @@ const MARKS: &[MarkWord] = &[
 ];
 
 /// THE STATEMENT: name, version, the hook tail and the four claimed words.
-pub const STATEMENT: Statement = Statement {
-    mark_words: MARKS.as_ptr(),
-    mark_words_len: MARKS.len(),
-    ..statement_with_tail(
-        statement(NAME, env!("CARGO_PKG_VERSION"), MAX_INFLIGHT),
-        TAIL,
-    )
-};
+pub const STATEMENT: Statement = statement_with_tail(
+    statement(NAME, env!("CARGO_PKG_VERSION"), MAX_INFLIGHT),
+    TAIL,
+)
+.with_mark_words(MARKS);
 
 /// One opened ranking: the strategy its settings named.
 #[derive(Debug)]

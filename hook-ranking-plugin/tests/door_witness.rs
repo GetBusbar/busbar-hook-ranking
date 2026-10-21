@@ -24,9 +24,9 @@ use std::task::Poll;
 use busbar_contract::abi::hook::{slot, DecideOut};
 use busbar_contract::abi::host::hook::{DecideFrame, DecideView};
 use busbar_contract::abi::mechanism::call::{Blob, Outcome, BLOB_JSON};
-use busbar_contract::abi::mechanism::door::DoorFn;
 use busbar_contract::abi::mechanism::lifecycle::{slot as life, OpenIn, OpenOut};
 use busbar_contract::abi::sdk::door::blank_out;
+use busbar_contract::abi::sdk::door::MacroDoor;
 use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{Decoded, Hook as HookImpl, HookOpen, Verdict};
 use busbar_contract::hooks::{Candidate, RoutingContext, RoutingRequest};
@@ -34,8 +34,8 @@ use busbar_contract::SignalBag;
 use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
-    in_head, load_dropped, load_linked, out_head, rendering_of, Bind, ConnTable, DispatchConfig,
-    Dispatcher, Frame, LinkedRow, NoSink, Plugin,
+    in_head, load_dropped, load_linked, out_head, rendering_of_macro, Bind, ConnTable,
+    DispatchConfig, Dispatcher, Frame, LinkedRow, NoSink, Plugin,
 };
 
 fn bind(d: &Dispatcher) -> Bind {
@@ -49,14 +49,14 @@ fn bind(d: &Dispatcher) -> Bind {
 }
 
 /// `door`, linked and bound on `d`.
-fn linked_row(door: DoorFn, d: &Dispatcher) -> Plugin<Hook> {
-    let row = LinkedRow::of(door).expect("the door states itself");
+fn linked_row(door: MacroDoor, d: &Dispatcher) -> Plugin<Hook> {
+    let row = LinkedRow::of_macro(door).expect("the door states itself");
     load_linked::<Hook>(&row, bind(d)).expect("the door loads")
 }
 
 /// The linked door, bound on `d`.
 fn linked(d: &Dispatcher) -> Plugin<Hook> {
-    linked_row(busbar_hook_ranking::linked::door, d)
+    linked_row(busbar_hook_ranking::linked::MACRO_DOOR, d)
 }
 
 /// This crate's dropped-in image, the cdylib `cargo test` builds (`busbar_hook_ranking_plugin`),
@@ -64,22 +64,21 @@ fn linked(d: &Dispatcher) -> Plugin<Hook> {
 /// skip: this test IS the dropped-in door's proof.
 fn dropped(d: &Dispatcher) -> Plugin<Hook> {
     let path = busbar_plugin_loader::conformance::cdylib_of("busbar_hook_ranking_plugin");
-    let stated =
-        rendering_of(busbar_hook_ranking::linked::door).expect("the door renders its Statement");
+    let stated = rendering_of_macro(busbar_hook_ranking::linked::MACRO_DOOR)
+        .expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
 /// `open` over `settings`: its outcome.
+#[allow(unused_unsafe)]
 fn open(p: &Plugin<Hook>, settings: &str) -> Outcome {
     let mut f = Frame::new(
         OpenIn {
             head: in_head(),
             host: std::ptr::null(),
-            settings: Blob {
-                ptr: settings.as_ptr(),
-                len: settings.len(),
-                fmt: BLOB_JSON,
-                flags: 0,
+            // SAFETY: `settings` is borrowed for this call, which reads the blob and returns.
+            settings: unsafe {
+                Blob::from_raw_parts(settings.as_ptr(), settings.len(), BLOB_JSON, 0)
             },
             secrets: std::ptr::null(),
             secrets_len: 0,
@@ -250,7 +249,7 @@ mod reversed {
 #[test]
 fn red_a_door_that_ranks_the_other_way_answers_differently() {
     let honest = script(linked);
-    let red = script(|d| linked_row(reversed::door, d));
+    let red = script(|d| linked_row(reversed::MACRO_DOOR, d));
     assert_eq!(red.len(), honest.len());
     let differ: Vec<(&String, &String)> = honest.iter().zip(&red).filter(|(a, b)| a != b).collect();
     assert!(

@@ -11,7 +11,7 @@
 //! equal. The suite's RED arms are kept beside it. `plugin-ci.yml` runs it under `--release`.
 
 busbar_plugin_loader::conformance_suite! {
-    door: busbar_hook_ranking::linked::door,
+    door: busbar_hook_ranking::linked::MACRO_DOOR,
     cdylib: "busbar_hook_ranking_plugin",
     inputs: include_str!("conformance.json"),
 }
