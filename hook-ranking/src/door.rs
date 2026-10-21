@@ -55,14 +55,14 @@ busbar_contract::statement_extensions!(
 );
 
 /// THE STATEMENT: name, version, the hook tail, the four claimed words and the `declares` document.
-const STATEMENT: Statement = Statement {
-    extensions: EXTENSIONS,
-    mark_words: MARKS.as_ptr(),
-    mark_words_len: MARKS.len(),
-    ..statement_with_tail(
+const STATEMENT: Statement = {
+    let mut s = statement_with_tail(
         statement(NAME, env!("CARGO_PKG_VERSION"), MAX_INFLIGHT),
         TAIL,
     )
+    .with_mark_words(MARKS);
+    s.extensions = EXTENSIONS;
+    s
 };
 
 /// One opened ranking: the strategy its settings named.
