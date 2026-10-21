@@ -18,8 +18,8 @@
 //! `rank` is the entry point the door's `decide` calls, so exercising it is the most representative
 //! path.
 
-use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
 use crate::rank;
+use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
 
 fn cand_tied(idx: usize, rate: Option<f64>) -> DecodedCandidate<'static> {
     DecodedCandidate {

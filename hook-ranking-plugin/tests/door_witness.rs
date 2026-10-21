@@ -66,8 +66,7 @@ fn linked(d: &Dispatcher) -> Plugin<Hook> {
 /// skip: this test IS the dropped-in door's proof.
 fn dropped(d: &Dispatcher) -> Plugin<Hook> {
     let path = busbar_plugin_loader::conformance::cdylib_of("busbar_hook_ranking_plugin");
-    let stated =
-        rendering_of(busbar_hook_ranking::door).expect("the door renders its Statement");
+    let stated = rendering_of(busbar_hook_ranking::door).expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
@@ -234,7 +233,12 @@ mod reversed {
         }
     }
 
-    const MARKS: &[MarkWord] = &[word(WORDS[0]), word(WORDS[1]), word(WORDS[2]), word(WORDS[3])];
+    const MARKS: &[MarkWord] = &[
+        word(WORDS[0]),
+        word(WORDS[1]),
+        word(WORDS[2]),
+        word(WORDS[3]),
+    ];
 
     const STATEMENT: Statement = Statement {
         mark_words: MARKS.as_ptr(),
@@ -256,8 +260,11 @@ mod reversed {
 
     impl HookOpen for Open {
         fn open(settings: &str) -> Result<Box<dyn HookImpl>, String> {
-            let doc: serde_json::Value = serde_json::from_str(settings).map_err(|e| e.to_string())?;
-            let word = doc["policy"].as_str().ok_or("settings.policy is required")?;
+            let doc: serde_json::Value =
+                serde_json::from_str(settings).map_err(|e| e.to_string())?;
+            let word = doc["policy"]
+                .as_str()
+                .ok_or("settings.policy is required")?;
             if WORDS.contains(&word) {
                 Ok(Box::new(Reversed))
             } else {
