@@ -128,8 +128,6 @@ const WORDS: [&str; 4] = [
 /// The plugin's name: its Statement's, and the linked row's.
 const NAME: &str = "hooks-ranking";
 
-/// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
-/// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;
