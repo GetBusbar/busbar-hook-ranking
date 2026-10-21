@@ -14,16 +14,15 @@
 //! when the signal is ABSENT on every candidate is the answer `Abstain` (no opinion, default SWRR).
 //! Ties break by `idx`, so an order is the same on every call.
 //!
-//! A `NaN` KEY (coordinator ruling 2026-10-18, a robustness fix with no reachable difference) sorts
-//! after every number, as if absent, and all `NaN`s compare equal, so the comparator is a total
-//! order and no sort can panic on it. 1.5.5's `partial_cmp(..).unwrap_or(Equal)` (`:76-79`,
-//! `:98-101`) is no total order once a `NaN` sits among numbers, and no `NaN` ever reaches a
-//! ranking: every key is finite upstream. A cost is a rate card's mean, and the validator refuses a
-//! rate that is not finite and non-negative (v1.5.5 `crates/busbar/src/config_validate/mod.rs:1575`).
-//! A latency EWMA drops every sample that is not finite and positive (busbar
-//! `crates/busbar-kernel/src/store/in_memory/availability.rs:207`, and
-//! `crates/busbar/src/root/model_egress.rs:295`). A rate headroom is clamped into `[0, 1]`
-//! (`crates/busbar-kernel/src/governance/state.rs:917`). Concurrency is an integer.
+//! A `NaN` KEY is ordered as 1.5.5 ordered it: `partial_cmp(..).unwrap_or(Equal)` then the index
+//! (v1.5.5 `crates/hooks-ranking/src/lib.rs:76-79`, `:98-101`), so a `NaN` ties every number and the
+//! order among a pool holding one is whatever that comparator and the standard sort give. Hook
+//! behaviour is frozen at 1.5.5 (THE DESIGN §2, "A port keeps 1.5.5's surface"; Part 1), and no
+//! recorded ruling allows another order. No `NaN` reaches a ranking in practice: every key is finite
+//! upstream (a cost is a rate card's mean, and the validator refuses a rate that is not finite and
+//! non-negative, v1.5.5 `crates/busbar/src/config_validate/mod.rs:1575`; a latency EWMA drops every
+//! sample that is not finite and positive; a rate headroom is clamped into `[0, 1]`; concurrency
+//! is an integer).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -40,47 +39,42 @@ const POLICY_NAME_FASTEST: &str = "fastest";
 const POLICY_NAME_LEAST_BUSY: &str = "least_busy";
 const POLICY_NAME_USAGE: &str = "usage";
 
-/// THE ONE KEY ORDER both directions share: present keys by `partial_cmp` (`reverse` for the
-/// descending rankings), a `NaN` after every number and equal to every other `NaN`, then the index.
-/// A key that does not compare with itself is a `NaN` (for any `PartialOrd` key).
+/// THE ONE KEY ORDER both directions share, 1.5.5's comparator: present keys by `partial_cmp`
+/// (`reverse` for the descending rankings; a pair that does not compare, a `NaN` among them, is
+/// `Equal`), then the index; a present key before an absent one; absent keys by index.
 fn key_order<K: PartialOrd>(
     (ia, ka): &(usize, Option<K>),
     (ib, kb): &(usize, Option<K>),
     reverse: bool,
 ) -> std::cmp::Ordering {
     use std::cmp::Ordering::{Equal, Greater, Less};
-    fn orderable<K: PartialOrd>(k: &Option<K>) -> Option<&K> {
-        k.as_ref().filter(|v| v.partial_cmp(v).is_some())
-    }
-    let by_key = match (orderable(ka), orderable(kb)) {
+    match (ka, kb) {
         (Some(a), Some(b)) => {
             let (x, y) = if reverse { (b, a) } else { (a, b) };
-            x.partial_cmp(y).unwrap_or(Equal)
+            x.partial_cmp(y).unwrap_or(Equal).then(ia.cmp(ib))
         }
         (Some(_), None) => Less,
         (None, Some(_)) => Greater,
-        (None, None) => Equal,
-    };
-    by_key.then(ia.cmp(ib))
+        (None, None) => ia.cmp(ib),
+    }
 }
 
 /// Rank candidates by a key, ascending (smallest key first), exactly as 1.5.5 ranked them (v1.5.5
 /// `crates/hooks-ranking/src/lib.rs:64-85`; hook behaviour is frozen at 1.5.5). Candidates whose key
 /// is `None` are demoted to the end (lowest preference) but still ranked among themselves by `idx`;
-/// never dropped, so a member with missing signal data is reachable, not stranded. A `NaN` key sorts
-/// as absent ([`key_order`], the crate doc). Returns `Abstain` if the signal is ABSENT on every
+/// never dropped, so a member with missing signal data is reachable, not stranded. A `NaN` key ties
+/// every number, as in 1.5.5 ([`key_order`], the crate doc). Returns `Abstain` if the signal is ABSENT on every
 /// candidate (no opinion → default SWRR).
 fn rank_ascending_by<K: PartialOrd + Copy>(
     candidates: &[DecodedCandidate<'_>],
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
     let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
-    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule): an all-`NaN` pool
-    // states the signal, so it ranks by index as 1.5.5 did.
+    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule).
     if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
     }
-    // Present keys ascending, then every absent or `NaN` key; ties by idx ([`key_order`]).
+    // Present keys ascending, then every absent key; ties by idx ([`key_order`]).
     keyed.sort_by(|a, b| key_order(a, b, false));
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
 }
@@ -92,8 +86,7 @@ fn rank_descending_by<K: PartialOrd + Copy>(
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
     let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
-    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule): an all-`NaN` pool
-    // states the signal, so it ranks by index as 1.5.5 did.
+    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule).
     if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
     }
