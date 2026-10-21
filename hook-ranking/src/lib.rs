@@ -128,7 +128,7 @@ pub const NAME: &str = "hooks-ranking";
 /// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
 /// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
 pub mod linked {
-    pub use crate::door::door;
+    pub use crate::door::{door, MACRO_DOOR};
 }
 
 #[cfg(test)]
