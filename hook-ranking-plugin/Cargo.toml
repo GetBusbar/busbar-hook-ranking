@@ -15,7 +15,7 @@ description = "First-party signed kind:hook plugin cdylib: the ranking hook, pac
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# THE LOGIC, same repo: its `linked::door` is the door this image exports. A busbar build that LINKS
+# THE LOGIC, same repo: its `door` is the door this image exports. A busbar build that LINKS
 # the hook names the logic crate, which exports no symbol.
 busbar-hook-ranking = { path = "../hook-ranking" }
 busbar-contract = { workspace = true }
