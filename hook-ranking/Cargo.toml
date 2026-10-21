@@ -9,7 +9,7 @@ publish.workspace = true
 description = "The ranking hook for busbar: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
 
 [lib]
-# rlib: the LINKED door, which a busbar build names as a compiled-in row (`linked::door`, the root's
+# rlib: the LINKED door, which a busbar build names as a compiled-in row (`door`, the root's
 # `hooks-ranking` row on the hook axis). The dropped-in door is the sibling
 # `busbar-hook-ranking-plugin` cdylib, which exports this same door as its one symbol; this crate
 # exports none.

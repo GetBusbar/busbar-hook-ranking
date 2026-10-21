@@ -5,13 +5,18 @@
 //! one contract, one loading path), and RANKING NEVER PENDS (ARCHITECT Q-SO9).
 //!
 //! * [`the_linked_and_the_dropped_in_door_rank_every_shape_the_same`]: the linked door
-//!   (`linked::door`) and this crate's dropped-in image (its built cdylib, the same door behind
+//!   (`busbar_hook_ranking::door`) and this crate's dropped-in image (its built cdylib, the same door behind
 //!   `export_door!`), each admitted through the one loader, run ONE script — a refused open,
 //!   then every strategy word opened and asked to `decide` over every candidate shape the ranking
 //!   parity cases use. The two transcripts (outcome, verbs, the order written) must be identical.
-//! * RED ARM, kept: [`red_a_door_that_ranks_the_other_way_answers_differently`] runs the same script
-//!   over the same door with its verdict reversed. Its transcript differs at the orders, so a door
-//!   that ranked differently cannot pass for this one.
+//! * RED ARMS: [`red_a_door_with_a_real_ranking_bug_answers_differently`] runs the same script over
+//!   a rival door that ranks by its own comparator (it can only name the bare `door`, so it cannot
+//!   wrap the real one). With no bug it must answer exactly as the real door; with a WRONG TIE-BREAK
+//!   (equal keys ordered by the largest index) or a NaN KEY DEMOTED to the end (1.5.5 ties it with
+//!   every number), its transcript must differ at exactly the lines the bug reaches: for the
+//!   tie-break, every line where two keys tie (the all-tied shape for each word, `least_busy` over
+//!   shapes 1 and 2, `cheapest` over the NaN shape); for the NaN, `cheapest` over the NaN shape
+//!   alone. A door that mis-ranks a tie or a NaN cannot pass for this one.
 //! * [`every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending`]: through both
 //!   doors, `decide` answers READY on the FIRST poll for every word and shape. Ranking is pure
 //!   compute: an answer of PENDING would hand the call to the dispatcher's deadline, where 1.5.5's
@@ -24,19 +29,22 @@ use std::task::Poll;
 use busbar_contract::abi::hook::{slot, DecideOut};
 use busbar_contract::abi::host::hook::{DecideFrame, DecideView};
 use busbar_contract::abi::mechanism::call::{Blob, Outcome, BLOB_JSON};
-use busbar_contract::abi::mechanism::door::DoorFn;
 use busbar_contract::abi::mechanism::lifecycle::{slot as life, OpenIn, OpenOut};
 use busbar_contract::abi::sdk::door::blank_out;
 use busbar_contract::abi::sdk::exchange::Op;
-use busbar_contract::abi::sdk::hook::{Decoded, Hook as HookImpl, HookOpen, Verdict};
+use busbar_contract::abi::sdk::hook::{
+    Decoded, DecodedCandidate, Hook as HookImpl, HookOpen, Verdict,
+};
 use busbar_contract::hooks::{Candidate, RoutingContext, RoutingRequest};
 use busbar_contract::SignalBag;
-use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
-    in_head, load_dropped, load_linked, out_head, rendering_of, Bind, ConnTable, DispatchConfig,
-    Dispatcher, Frame, LinkedRow, NoSink, Plugin,
+    in_head, load_dropped, load_linked, out_head, rendering_of_loaded, Bind, ConnTable,
+    DispatchConfig, Dispatcher, Frame, LinkedRow, LoadedDoor, NoSink, Plugin,
 };
+
+/// The four strategy words the door's Statement claims.
+const WORDS: [&str; 4] = ["cheapest", "fastest", "least_busy", "usage"];
 
 fn bind(d: &Dispatcher) -> Bind {
     Bind {
@@ -48,15 +56,24 @@ fn bind(d: &Dispatcher) -> Bind {
     }
 }
 
-/// `door`, linked and bound on `d`.
-fn linked_row(door: DoorFn, d: &Dispatcher) -> Plugin<Hook> {
-    let row = LinkedRow::of(door).expect("the door states itself");
+/// This crate's own bare `door`, as the loader names a compiled-in one.
+#[allow(unused_unsafe)]
+fn loaded() -> LoadedDoor {
+    // SAFETY: `door` is this crate's own `plugin_door!` entry.
+    unsafe { LoadedDoor::from_raw(busbar_hook_ranking::door) }
+}
+
+/// `row`, linked and bound on `d`.
+fn linked_row(row: LinkedRow, d: &Dispatcher) -> Plugin<Hook> {
     load_linked::<Hook>(&row, bind(d)).expect("the door loads")
 }
 
 /// The linked door, bound on `d`.
 fn linked(d: &Dispatcher) -> Plugin<Hook> {
-    linked_row(busbar_hook_ranking::linked::door, d)
+    linked_row(
+        LinkedRow::of_loaded(loaded()).expect("the door states itself"),
+        d,
+    )
 }
 
 /// This crate's dropped-in image, the cdylib `cargo test` builds (`busbar_hook_ranking_plugin`),
@@ -64,22 +81,20 @@ fn linked(d: &Dispatcher) -> Plugin<Hook> {
 /// skip: this test IS the dropped-in door's proof.
 fn dropped(d: &Dispatcher) -> Plugin<Hook> {
     let path = busbar_plugin_loader::conformance::cdylib_of("busbar_hook_ranking_plugin");
-    let stated =
-        rendering_of(busbar_hook_ranking::linked::door).expect("the door renders its Statement");
+    let stated = rendering_of_loaded(loaded()).expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
 /// `open` over `settings`: its outcome.
+#[allow(unused_unsafe)]
 fn open(p: &Plugin<Hook>, settings: &str) -> Outcome {
     let mut f = Frame::new(
         OpenIn {
             head: in_head(),
             host: std::ptr::null(),
-            settings: Blob {
-                ptr: settings.as_ptr(),
-                len: settings.len(),
-                fmt: BLOB_JSON,
-                flags: 0,
+            // SAFETY: `settings` is borrowed for this call, which reads the blob and returns.
+            settings: unsafe {
+                Blob::from_raw_parts(settings.as_ptr(), settings.len(), BLOB_JSON, 0)
             },
             secrets: std::ptr::null(),
             secrets_len: 0,
@@ -134,7 +149,18 @@ const SHAPES: &[&[Row]] = &[
     ],
     &[(0, Some(5.0), Some(30.0), 3, Some(0.5))],
     &[],
+    // Every key equal on every signal: only the tie-break orders it.
+    &[
+        (0, Some(3.0), Some(40.0), 4, Some(0.5)),
+        (1, Some(3.0), Some(40.0), 4, Some(0.5)),
+        (2, Some(3.0), Some(40.0), 4, Some(0.5)),
+    ],
 ];
+
+/// The shape holding a `NaN` key: 1.5.5 ties it with every number.
+const NAN_SHAPE: usize = 2;
+/// The shape whose keys all tie.
+const TIE_SHAPE: usize = 5;
 
 fn candidates(rows: &[Row]) -> Vec<Candidate<'static>> {
     rows.iter()
@@ -213,53 +239,220 @@ fn the_linked_and_the_dropped_in_door_rank_every_shape_the_same() {
     assert_eq!(script(dropped), linked, "the dropped-in door");
 }
 
-/// The ranking door with its verdict REVERSED: the same Statement, the same strategies, every
-/// preferred order read back to front. The red arm's door.
-mod reversed {
-    use super::{Decoded, HookImpl, HookOpen, Op, Poll, Verdict};
-
-    struct Reversed(Box<dyn HookImpl>);
-
-    impl HookImpl for Reversed {
-        fn decide(&self, view: &Decoded<'_>, op: &Op<'_>) -> Poll<Verdict> {
-            self.0.decide(view, op).map(|v| match v {
-                Verdict::Prefer(mut order) => {
-                    order.reverse();
-                    Verdict::Prefer(order)
-                }
-                other => other,
-            })
-        }
-    }
-
-    pub struct Open;
-
-    impl HookOpen for Open {
-        fn open(settings: &str) -> Result<Box<dyn HookImpl>, String> {
-            busbar_hook_ranking::door::Open::open(settings)
-                .map(|h| Box::new(Reversed(h)) as Box<dyn HookImpl>)
-        }
-    }
-
-    busbar_contract::hook_door! {
-        open: Open,
-        statement: busbar_hook_ranking::door::STATEMENT,
-    }
+/// Which bug a rival door ranks with.
+#[derive(Clone, Copy)]
+enum Bug {
+    /// None: the comparator the real door uses (1.5.5's).
+    Faithful,
+    /// Equal keys ordered by the LARGEST index, not the smallest.
+    TieByLargestIdx,
+    /// A `NaN` key demoted behind every number, where 1.5.5 ties it with every number.
+    NanLast,
 }
 
+/// The rival ranker: the four words over the same keys as the real door, ordered by its own
+/// comparator, with the chosen bug.
+#[allow(clippy::cast_precision_loss)]
+fn rival_rank(word: &str, candidates: &[DecodedCandidate<'_>], bug: Bug) -> Verdict {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let (descending, mut keyed): (bool, Vec<(usize, Option<f64>)>) = match word {
+        "cheapest" => (
+            false,
+            candidates
+                .iter()
+                .map(|c| (c.idx, c.cost_per_mtok))
+                .collect(),
+        ),
+        "fastest" => (
+            false,
+            candidates.iter().map(|c| (c.idx, c.latency_ms)).collect(),
+        ),
+        "least_busy" => (
+            true,
+            candidates
+                .iter()
+                .map(|c| (c.idx, Some(c.available_concurrency as f64)))
+                .collect(),
+        ),
+        "usage" => (
+            true,
+            candidates
+                .iter()
+                .map(|c| (c.idx, c.rate_headroom))
+                .collect(),
+        ),
+        _ => return Verdict::Abstain,
+    };
+    if keyed.iter().all(|(_, k)| k.is_none()) {
+        return Verdict::Abstain;
+    }
+    keyed.sort_by(|(ia, ka), (ib, kb)| {
+        let tie = if matches!(bug, Bug::TieByLargestIdx) {
+            ib.cmp(ia)
+        } else {
+            ia.cmp(ib)
+        };
+        match (ka, kb) {
+            (Some(a), Some(b)) => {
+                if matches!(bug, Bug::NanLast) && a.is_nan() != b.is_nan() {
+                    return if a.is_nan() { Greater } else { Less };
+                }
+                let (x, y) = if descending { (b, a) } else { (a, b) };
+                x.partial_cmp(y).unwrap_or(Equal).then(tie)
+            }
+            (Some(_), None) => Less,
+            (None, Some(_)) => Greater,
+            (None, None) => tie,
+        }
+    });
+    Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
+}
+
+/// A rival ranking door named `$name`: the same name, hook tail and claimed words as the real
+/// door, every strategy word opened, ranking by [`rival_rank`] with `$bug`.
+macro_rules! rival_door {
+    ($name:ident, $bug:expr) => {
+        mod $name {
+            use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
+            use busbar_contract::abi::mechanism::door::{MarkWord, Statement, MARK_WORD_HOOK};
+            use busbar_contract::abi::sdk::door::{abi_str, statement};
+            use busbar_contract::abi::sdk::hook::{statement_with_tail, tail};
+
+            const TAIL: &Tail = &tail(CLASS_GATE, PROMPT_NO, USER_NO);
+
+            const fn word(w: &'static str) -> MarkWord {
+                MarkWord {
+                    class: MARK_WORD_HOOK,
+                    _reserved: 0,
+                    word: abi_str(w),
+                }
+            }
+
+            const MARKS: &[MarkWord] = &[
+                word(crate::WORDS[0]),
+                word(crate::WORDS[1]),
+                word(crate::WORDS[2]),
+                word(crate::WORDS[3]),
+            ];
+
+            const STATEMENT: Statement =
+                statement_with_tail(statement("hooks-ranking", "1.6.0", 64), TAIL)
+                    .with_mark_words(MARKS);
+
+            struct Rival(&'static str);
+
+            impl crate::HookImpl for Rival {
+                fn decide(
+                    &self,
+                    view: &crate::Decoded<'_>,
+                    _: &crate::Op<'_>,
+                ) -> crate::Poll<crate::Verdict> {
+                    crate::Poll::Ready(crate::rival_rank(self.0, &view.candidates, $bug))
+                }
+            }
+
+            pub struct Open;
+
+            impl crate::HookOpen for Open {
+                fn open(settings: &str) -> Result<Box<dyn crate::HookImpl>, String> {
+                    let doc: serde_json::Value =
+                        serde_json::from_str(settings).map_err(|e| e.to_string())?;
+                    let word = doc["policy"]
+                        .as_str()
+                        .ok_or("settings.policy is required")?;
+                    let word: &'static str = crate::WORDS
+                        .iter()
+                        .copied()
+                        .find(|w| *w == word)
+                        .ok_or_else(|| format!("no strategy '{word}'"))?;
+                    Ok(Box::new(Rival(word)))
+                }
+            }
+
+            busbar_contract::hook_door! {
+                open: Open,
+                statement: STATEMENT,
+            }
+        }
+    };
+}
+
+rival_door!(faithful, crate::Bug::Faithful);
+rival_door!(wrong_tie, crate::Bug::TieByLargestIdx);
+rival_door!(nan_last, crate::Bug::NanLast);
+
+/// The script over the rival door `$door`.
+macro_rules! rival_script {
+    ($door:ident) => {
+        script(|d| {
+            linked_row(
+                LinkedRow::of_macro($door::MACRO_DOOR).expect("the door states itself"),
+                d,
+            )
+        })
+    };
+}
+
+/// RED: a door that ranks by a comparator with a REAL bug answers differently. The rival with no
+/// bug answers as the real door does, line for line (so any difference below is the bug); a wrong
+/// tie-break differs at exactly the seven lines where keys tie (the all-tied shape for each
+/// word, `least_busy` over shapes 1 and 2, `cheapest` over shape 2); a NaN key demoted to the
+/// end differs at the NaN shape of `cheapest` only.
 #[test]
-fn red_a_door_that_ranks_the_other_way_answers_differently() {
+fn red_a_door_with_a_real_ranking_bug_answers_differently() {
     let honest = script(linked);
-    let red = script(|d| linked_row(reversed::door, d));
-    assert_eq!(red.len(), honest.len());
-    let differ: Vec<(&String, &String)> = honest.iter().zip(&red).filter(|(a, b)| a != b).collect();
+    assert_eq!(
+        rival_script!(faithful),
+        honest,
+        "the rival with no bug ranks as the real door does"
+    );
+
+    let tie = rival_script!(wrong_tie);
+    assert_eq!(tie.len(), honest.len());
+    let differ: Vec<(&String, &String)> = honest.iter().zip(&tie).filter(|(a, b)| a != b).collect();
     assert!(
         !differ.is_empty(),
-        "a reversed ranking must answer differently"
+        "a wrong tie-break must answer differently"
+    );
+    // Exactly the lines where two keys tie: the all-tied shape for every word; `least_busy` over
+    // the two shapes whose members hold equal permits (1 and 1, 0 and 0); and `cheapest` over the
+    // NaN shape, where a NaN compares Equal with 1.0 and falls to the tie-break.
+    let mut expected: Vec<String> = WORDS
+        .iter()
+        .map(|w| format!("{w} shape {TIE_SHAPE}:"))
+        .collect();
+    expected.extend([
+        "least_busy shape 1:".to_string(),
+        format!("least_busy shape {NAN_SHAPE}:"),
+        format!("cheapest shape {NAN_SHAPE}:"),
+    ]);
+    let mut got: Vec<String> = differ
+        .iter()
+        .map(|(a, _)| {
+            a.split_once(':')
+                .map_or(String::new(), |(h, _)| format!("{h}:"))
+        })
+        .collect();
+    expected.sort();
+    got.sort();
+    assert_eq!(
+        got, expected,
+        "the wrong tie-break differs exactly where keys tie: {differ:#?}"
+    );
+
+    let nan = rival_script!(nan_last);
+    assert_eq!(nan.len(), honest.len());
+    let differ: Vec<(&String, &String)> = honest.iter().zip(&nan).filter(|(a, b)| a != b).collect();
+    assert_eq!(
+        differ.len(),
+        1,
+        "a NaN demoted to the end must answer differently, once: {differ:#?}"
     );
     assert!(
-        differ.iter().all(|(a, _)| a.contains(" shape ")),
-        "the two differ at the orders, nowhere else: {differ:#?}"
+        differ[0]
+            .0
+            .starts_with(&format!("cheapest shape {NAN_SHAPE}:")),
+        "{differ:#?}"
     );
 }
 
@@ -286,4 +479,15 @@ fn every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending() {
             }
         }
     }
+}
+
+/// The door's Statement carries this plugin's whole `declares` document (BUSBAR-1.6.0.md l.246).
+#[test]
+fn the_statement_carries_the_declares_document() {
+    let row = LinkedRow::of_loaded(loaded()).unwrap();
+    let read = busbar_contract::abi::mechanism::rendering::read(&row.statement).unwrap();
+    assert_eq!(
+        busbar_contract::abi::mechanism::extensions::declares(&read.extensions.bytes),
+        Some(&include_bytes!("../../hook-ranking/declares.json")[..]),
+    );
 }
