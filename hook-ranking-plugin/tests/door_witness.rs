@@ -13,8 +13,10 @@
 //!   a rival door that ranks by its own comparator (it can only name the bare `door`, so it cannot
 //!   wrap the real one). With no bug it must answer exactly as the real door; with a WRONG TIE-BREAK
 //!   (equal keys ordered by the largest index) or a NaN KEY DEMOTED to the end (1.5.5 ties it with
-//!   every number), its transcript must differ, at the tie shape and the NaN shape and nowhere
-//!   else. A door that mis-ranks a tie or a NaN cannot pass for this one.
+//!   every number), its transcript must differ at exactly the lines the bug reaches: for the
+//!   tie-break, every line where two keys tie (the all-tied shape for each word, `least_busy` over
+//!   shapes 1 and 2, `cheapest` over the NaN shape); for the NaN, `cheapest` over the NaN shape
+//!   alone. A door that mis-ranks a tie or a NaN cannot pass for this one.
 //! * [`every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending`]: through both
 //!   doors, `decide` answers READY on the FIRST poll for every word and shape. Ranking is pure
 //!   compute: an answer of PENDING would hand the call to the dispatcher's deadline, where 1.5.5's
@@ -393,8 +395,9 @@ macro_rules! rival_script {
 
 /// RED: a door that ranks by a comparator with a REAL bug answers differently. The rival with no
 /// bug answers as the real door does, line for line (so any difference below is the bug); a wrong
-/// tie-break differs where keys tie only; a NaN key demoted to the end differs at the NaN shape
-/// of `cheapest` only.
+/// tie-break differs at exactly the seven lines where keys tie (the all-tied shape for each
+/// word, `least_busy` over shapes 1 and 2, `cheapest` over shape 2); a NaN key demoted to the
+/// end differs at the NaN shape of `cheapest` only.
 #[test]
 fn red_a_door_with_a_real_ranking_bug_answers_differently() {
     let honest = script(linked);
@@ -411,22 +414,30 @@ fn red_a_door_with_a_real_ranking_bug_answers_differently() {
         !differ.is_empty(),
         "a wrong tie-break must answer differently"
     );
-    // The tie shape, for every word; and `least_busy` over the NaN shape, whose two members both
-    // hold zero permits and so tie too.
-    assert!(
-        differ
-            .iter()
-            .all(|(a, _)| a.contains(&format!(" shape {TIE_SHAPE}:"))
-                || a.starts_with(&format!("least_busy shape {NAN_SHAPE}:"))),
-        "the wrong tie-break differs where keys tie, nowhere else: {differ:#?}"
-    );
+    // Exactly the lines where two keys tie: the all-tied shape for every word; `least_busy` over
+    // the two shapes whose members hold equal permits (1 and 1, 0 and 0); and `cheapest` over the
+    // NaN shape, where a NaN compares Equal with 1.0 and falls to the tie-break.
+    let mut expected: Vec<String> = WORDS
+        .iter()
+        .map(|w| format!("{w} shape {TIE_SHAPE}:"))
+        .collect();
+    expected.extend([
+        "least_busy shape 1:".to_string(),
+        format!("least_busy shape {NAN_SHAPE}:"),
+        format!("cheapest shape {NAN_SHAPE}:"),
+    ]);
+    let mut got: Vec<String> = differ
+        .iter()
+        .map(|(a, _)| {
+            a.split_once(':')
+                .map_or(String::new(), |(h, _)| format!("{h}:"))
+        })
+        .collect();
+    expected.sort();
+    got.sort();
     assert_eq!(
-        differ
-            .iter()
-            .filter(|(a, _)| a.contains(&format!(" shape {TIE_SHAPE}:")))
-            .count(),
-        WORDS.len(),
-        "every word mis-orders the all-tied shape: {differ:#?}"
+        got, expected,
+        "the wrong tie-break differs exactly where keys tie: {differ:#?}"
     );
 
     let nan = rival_script!(nan_last);
