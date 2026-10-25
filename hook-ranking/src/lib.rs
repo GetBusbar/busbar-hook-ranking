@@ -99,7 +99,8 @@ fn rank_descending_by<K: PartialOrd + Copy>(
 ///
 /// * `cheapest`: lowest operator-declared `cost_per_mtok`; a member with no cost is demoted.
 /// * `fastest`: lowest measured rolling-EWMA `latency_ms`; a member with no sample is demoted.
-/// * `least_busy`: most `available_concurrency`; the signal is always present, so never Abstains.
+/// * `least_busy`: most `available_concurrency`; the signal is always present, so it Abstains only
+///   on an empty pool.
 /// * `usage`: most `rate_headroom` (the largest fraction of the governance rate budget still
 ///   available this window); a member with no headroom signal is demoted, and every member lacking
 ///   it Abstains (no rate limit in play).
