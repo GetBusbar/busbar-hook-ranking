@@ -77,3 +77,63 @@ fn every_word_opens() {
         assert!(<Open as HookOpen>::open(&s).is_ok(), "{w}");
     }
 }
+
+#[test]
+fn an_empty_document_is_a_missing_policy() {
+    // The SDK reads an empty settings blob as `{}`; so does the door.
+    for s in ["", "  \n"] {
+        assert_eq!(
+            refusal(s),
+            "hook-ranking: settings.policy is required",
+            "{s:?}"
+        );
+    }
+}
+
+fn map(settings: &str) -> serde_json::Map<String, serde_json::Value> {
+    serde_json::from_str(settings).expect("a JSON object")
+}
+
+#[test]
+fn configure_without_a_policy_acknowledges_and_changes_nothing() {
+    assert_eq!(configured(&map("{}")), Ok(None));
+}
+
+#[test]
+fn configure_with_a_word_moves_the_live_strategy() {
+    for (i, w) in WORDS.iter().enumerate() {
+        assert_eq!(
+            configured(&map(&format!(r#"{{"policy":"{w}"}}"#))),
+            Ok(Some(i))
+        );
+    }
+}
+
+#[test]
+fn configure_refuses_in_open_s_words() {
+    for (s, want) in [
+        (r#"{"policy":"nope"}"#, "no strategy 'nope'"),
+        (r#"{"policy":5}"#, "settings.policy must be a string"),
+        (
+            r#"{"policy":"cheapest","fallback":"x"}"#,
+            "unknown setting 'fallback'",
+        ),
+    ] {
+        let m = configured(&map(s)).expect_err(s);
+        assert!(m.contains(want), "{s}: {m}");
+        assert_lists_words(&m);
+    }
+}
+
+#[test]
+fn a_nacked_configure_leaves_the_live_strategy() {
+    let hook = Ranking(AtomicUsize::new(1));
+    assert!(!hook.configure(&map(r#"{"policy":"nope"}"#), 2));
+    assert_eq!(hook.word(), "fastest");
+    assert!(hook.configure(&map(r#"{"policy":"usage"}"#), 3));
+    assert_eq!(hook.word(), "usage");
+    assert!(!hook.configure(&map(r#"{"policy":"cheapest","x":1}"#), 4));
+    assert_eq!(hook.word(), "usage", "a NACK commits nothing");
+    assert!(hook.configure(&map("{}"), 5));
+    assert_eq!(hook.word(), "usage");
+}

@@ -14,6 +14,9 @@ description = "First-party signed kind:hook plugin cdylib: the ranking hook, pac
 # loads (a cdylib-only package builds a trivial test harness and never produces the library).
 crate-type = ["cdylib", "rlib"]
 
+[lints]
+workspace = true
+
 [dependencies]
 # THE LOGIC, same repo: its `linked::door` is the door this image exports. A busbar build that LINKS
 # the hook names the logic crate, which exports no symbol.

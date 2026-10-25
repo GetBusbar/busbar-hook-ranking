@@ -23,3 +23,9 @@ crate-type = ["rlib"]
 busbar-contract = { workspace = true }
 # The settings document `open` reads (already in the contract's closure).
 serde_json = { workspace = true }
+# The plugin's log: `tracing` events are captured by the SDK into the plugin's own log file (a
+# configure NACK's reason).
+tracing = { workspace = true }
+
+[lints]
+workspace = true
