@@ -5,7 +5,8 @@
 //! surface. No `unsafe` here.
 //!
 //! * `open` reads the strategy from the settings document, `{"policy": "<word>"}`, one of
-//!   [`crate::WORDS`]; anything else refuses in words.
+//!   [`crate::WORDS`]; any other key, a non-object document, or a non-string policy refuses in
+//!   words, as does an unknown word.
 //! * `decide` ranks the view's candidates ([`crate::rank`]). It reads no prompt and no caller (the
 //!   Statement's tail asks for none) and never pends: no need is declared.
 //! * `transform` / `notify` / `configure` / `status` / `describe` are the SDK's defaults.
@@ -74,10 +75,24 @@ impl HookOpen for Open {
     fn open(settings: &str) -> Result<Box<dyn Hook>, String> {
         let doc: serde_json::Value = serde_json::from_str(settings)
             .map_err(|e| format!("hook-ranking: the settings are not JSON: {e}"))?;
-        let word = doc
+        let obj = doc.as_object().ok_or_else(|| {
+            format!(
+                "hook-ranking: the settings must be an object {{\"policy\": \"<word>\"}}, one of {WORDS:?}"
+            )
+        })?;
+        if let Some(k) = obj.keys().find(|k| k.as_str() != "policy") {
+            return Err(format!(
+                "hook-ranking: unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
+            ));
+        }
+        let word = obj
             .get("policy")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "hook-ranking: settings.policy is required".to_string())?;
+            // The host's double mirrors this text byte for byte (busbar `ranking_double.rs`).
+            .ok_or_else(|| "hook-ranking: settings.policy is required".to_string())?
+            .as_str()
+            .ok_or_else(|| {
+                format!("hook-ranking: settings.policy must be a string, one of {WORDS:?}")
+            })?;
         let word = WORDS
             .iter()
             .find(|w| **w == word)
@@ -90,3 +105,7 @@ busbar_contract::hook_door! {
     open: Open,
     statement: STATEMENT,
 }
+
+#[cfg(test)]
+#[path = "tests/door_tests.rs"]
+mod tests;
