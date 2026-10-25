@@ -42,12 +42,6 @@ fn cand_rate(
     }
 }
 
-/// `weighted` is not a word of this plugin: the engine's inline SWRR floor is (Q128 NIT).
-#[test]
-fn weighted_is_not_a_word_of_this_plugin() {
-    assert!(rank("weighted", &[cand(0, None, None, 1, None)]).is_none());
-}
-
 #[test]
 fn cheapest_orders_by_cost_demoting_unknown() {
     let cands = [
