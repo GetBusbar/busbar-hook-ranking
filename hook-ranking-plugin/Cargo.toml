@@ -28,4 +28,5 @@ busbar-contract = { workspace = true }
 # dev-only, never in the shipped artifact. `conformance` is busbar's published suite
 # (`tests/conformance.rs`, `conformance_suite!`); `tests/door_witness.rs` is the door witness that
 # moved here with the crate from busbar's crates/hooks-ranking.
-busbar-plugin-loader = { workspace = true, features = ["conformance"] }
+busbar-plugin-loader = { workspace = true }
+busbar-test-kit = { workspace = true }
