@@ -3,7 +3,7 @@
 
 //! Invariant test: ranking must be DETERMINISTIC under ties. When two or more candidates present
 //! an identical primary ranking key to a native policy, the source (`crates/hooks-ranking/src/
-//! lib.rs`, `rank_ascending_by` / `rank_descending_by`) breaks the tie by `idx` — the candidate's
+//! lib.rs`, `rank_by`) breaks the tie by `idx` — the candidate's
 //! stable slot in the input slice — via `.then(ia.cmp(ib))` in the sort comparator. That is a
 //! total, deterministic secondary key: it is NOT influenced by `HashMap` iteration order, thread
 //! scheduling, or any other nondeterministic source, because `DecodedCandidate` and the ranking function

@@ -52,7 +52,7 @@ const MARKS: &[MarkWord] = &[
     word(WORDS[3]),
 ];
 
-/// THE STATEMENT: name, version, the hook tail and the four claimed words.
+/// The Statement: name, version, the hook tail and the four claimed words.
 pub const STATEMENT: Statement = Statement {
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
