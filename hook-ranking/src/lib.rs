@@ -59,14 +59,16 @@ fn key_order<K: PartialOrd>(
     }
 }
 
-/// Rank candidates by a key, ascending (smallest key first), exactly as 1.5.5 ranked them (v1.5.5
-/// `crates/hooks-ranking/src/lib.rs:64-85`; hook behaviour is frozen at 1.5.5). Candidates whose key
-/// is `None` are demoted to the end (lowest preference) but still ranked among themselves by `idx`;
-/// never dropped, so a member with missing signal data is reachable, not stranded. A `NaN` key ties
-/// every number, as in 1.5.5 ([`key_order`], the crate doc). Returns `Abstain` if the signal is ABSENT on every
-/// candidate (no opinion → default SWRR).
-fn rank_ascending_by<K: PartialOrd + Copy>(
+/// Rank candidates by a key, exactly as 1.5.5 ranked them (v1.5.5 `crates/hooks-ranking/src/lib.rs:64-85`;
+/// hook behaviour is frozen at 1.5.5): smallest key first, or with `descending` the LARGEST signal
+/// first (e.g. most free concurrency, most budget remaining). Candidates whose key is `None` are
+/// demoted to the end (lowest preference) but still ranked among themselves by `idx`; never
+/// dropped, so a member with missing signal data is reachable, not stranded. A `NaN` key ties every
+/// number, as in 1.5.5 ([`key_order`], the crate doc). Returns `Abstain` if the signal is ABSENT on
+/// every candidate (no opinion → default SWRR).
+fn rank_by<K: PartialOrd + Copy>(
     candidates: &[DecodedCandidate<'_>],
+    descending: bool,
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
     let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
@@ -74,23 +76,8 @@ fn rank_ascending_by<K: PartialOrd + Copy>(
     if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
     }
-    // Present keys ascending, then every absent key; ties by idx ([`key_order`]).
-    keyed.sort_by(|a, b| key_order(a, b, false));
-    Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
-}
-
-/// Rank descending (largest key first) — the same shape as `rank_ascending_by` but preferring the
-/// LARGEST signal (e.g. most free concurrency, most budget remaining).
-fn rank_descending_by<K: PartialOrd + Copy>(
-    candidates: &[DecodedCandidate<'_>],
-    key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
-) -> Verdict {
-    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
-    // Abstain only when the signal is ABSENT on every candidate (1.5.5's rule).
-    if keyed.iter().all(|(_, k)| k.is_none()) {
-        return Verdict::Abstain;
-    }
-    keyed.sort_by(|a, b| key_order(a, b, true));
+    // Present keys in order, then every absent key; ties by idx ([`key_order`]).
+    keyed.sort_by(|a, b| key_order(a, b, descending));
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
 }
 
@@ -107,10 +94,10 @@ fn rank_descending_by<K: PartialOrd + Copy>(
 #[must_use]
 pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
     Some(match name {
-        POLICY_NAME_CHEAPEST => rank_ascending_by(candidates, |c| c.cost_per_mtok),
-        POLICY_NAME_FASTEST => rank_ascending_by(candidates, |c| c.latency_ms),
-        POLICY_NAME_LEAST_BUSY => rank_descending_by(candidates, |c| Some(c.available_concurrency)),
-        POLICY_NAME_USAGE => rank_descending_by(candidates, |c| c.rate_headroom),
+        POLICY_NAME_CHEAPEST => rank_by(candidates, false, |c| c.cost_per_mtok),
+        POLICY_NAME_FASTEST => rank_by(candidates, false, |c| c.latency_ms),
+        POLICY_NAME_LEAST_BUSY => rank_by(candidates, true, |c| Some(c.available_concurrency)),
+        POLICY_NAME_USAGE => rank_by(candidates, true, |c| c.rate_headroom),
         _ => return None,
     })
 }
