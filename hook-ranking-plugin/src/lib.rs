@@ -3,7 +3,7 @@
 
 //! The `ranking` hook as a droppable busbar plugin: the `cdylib` a signed tarball carries
 //! (`kind: hook`, key `ranking`, hook words `cheapest`, `fastest`, `least_busy`, `usage`). It
-//! re-exports the logic crate and exports that crate's door (`busbar_hook_ranking::linked::door`,
+//! re-exports the logic crate and exports that crate's door (`busbar_hook_ranking::door::door`,
 //! the one a busbar build links) as this image's ONE symbol, `busbar_plugin_door`, with
 //! `busbar_contract::export_door!`, so the library carries exactly the door a busbar build links.
 //!
@@ -14,8 +14,10 @@
 
 pub use busbar_hook_ranking::*;
 
-/// The exported door: the macro's `#[no_mangle]` symbol is the one exemption.
+/// The exported door, behind `dropped-in` (the cdylib build only): the macro's `#[no_mangle]` symbol is
+/// the one exemption.
+#[cfg(feature = "dropped-in")]
 #[allow(unsafe_code)]
 mod exported {
-    busbar_contract::export_door!(busbar_hook_ranking::linked::door);
+    busbar_contract::export_door!(busbar_hook_ranking::door::door);
 }
