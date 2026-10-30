@@ -5,7 +5,7 @@
 //! the hook tail (class, prompt grant, user grant), as the plugin states them.
 
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
-use busbar_contract::abi::mechanism::door::MARK_WORD_HOOK;
+use busbar_contract::abi::mechanism::door::{MARK_WORD_HOOK, REWRITE_ALIAS};
 use busbar_hook_ranking::door::STATEMENT;
 use busbar_hook_ranking::{NAME, WORDS};
 
@@ -50,4 +50,17 @@ fn the_statement_tail_is_a_gate_with_no_prompt_and_no_user_grant() {
     // SAFETY: `name` is a `'static` UTF-8 string of its stated length.
     let name = unsafe { std::slice::from_raw_parts(STATEMENT.name.ptr, STATEMENT.name.len) };
     assert_eq!(name, NAME.as_bytes());
+}
+
+/// The Statement states its alias rewrite (`module: ranking` names this plugin), once.
+#[test]
+fn the_statement_states_the_alias_rewrite() {
+    use busbar_hook_ranking::ALIAS;
+    assert_eq!(STATEMENT.rewrites_len, 1);
+    // SAFETY: `rewrites` is the door's `'static` table of `rewrites_len` entries.
+    let rewrites = unsafe { std::slice::from_raw_parts(STATEMENT.rewrites, STATEMENT.rewrites_len) };
+    assert_eq!(rewrites[0].class, REWRITE_ALIAS);
+    // SAFETY: `from` is a `'static` UTF-8 string of its stated length.
+    let from = unsafe { std::slice::from_raw_parts(rewrites[0].from.ptr, rewrites[0].from.len) };
+    assert_eq!(from, ALIAS.as_bytes());
 }

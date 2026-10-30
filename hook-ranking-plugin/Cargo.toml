@@ -41,3 +41,4 @@ busbar-hook-ranking-plugin = { path = ".", features = ["dropped-in"] }
 # moved here with the crate from busbar's crates/hooks-ranking.
 busbar-plugin-loader = { workspace = true }
 busbar-test-kit = { workspace = true }
+serde_json = { workspace = true }
