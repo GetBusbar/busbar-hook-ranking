@@ -328,13 +328,13 @@ fn pool_rate(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<DecodedCandida
         .collect()
 }
 
-/// A `NaN` KEY IS AN ABSENT KEY. `NaN` makes `partial_cmp` partial, so a comparator that let it tie
-/// every number is no total order and the standard sort may panic past its insertion-sort range
-/// (more than 20 candidates). A `NaN` joins the absent group, ordered by idx behind every number,
-/// so the comparator is total. 48 candidates in a non-monotone idx order, `NaN`, absent and finite
+/// A `NaN` KEY SORTS AFTER EVERY NUMBER AND BEFORE EVERY ABSENT KEY. `NaN` makes `partial_cmp`
+/// partial, so a comparator that let it tie every number is no total order and the standard sort
+/// may panic past its insertion-sort range (more than 20 candidates). With the three tiers the
+/// comparator is total. 48 candidates in a non-monotone idx order, `NaN`, absent and finite
 /// keys mixed, ascending (`cheapest`) and descending (`usage`), the exact order asserted.
 #[test]
-fn a_nan_key_ranks_with_the_absent_group() {
+fn a_nan_key_ranks_after_the_numbers_and_before_the_absent() {
     const N: usize = 48;
     // idx % 3 == 0: NaN; idx % 5 == 0 (not 3): absent; else finite, many ties.
     let key = |idx: usize| {
@@ -347,7 +347,11 @@ fn a_nan_key_ranks_with_the_absent_group() {
         }
     };
     let finite = |idx: usize| !idx.is_multiple_of(3) && !idx.is_multiple_of(5);
-    let tail: Vec<usize> = (0..N).filter(|i| !finite(*i)).collect();
+    let nan: Vec<usize> = (0..N).filter(|i| i.is_multiple_of(3)).collect();
+    let absent: Vec<usize> = (0..N)
+        .filter(|i| !i.is_multiple_of(3) && i.is_multiple_of(5))
+        .collect();
+    let tail: Vec<usize> = nan.iter().chain(absent.iter()).copied().collect();
     let mut present: Vec<usize> = (0..N).filter(|i| finite(*i)).collect();
 
     present.sort_by_key(|i| (i % 4, *i));
@@ -375,15 +379,31 @@ fn a_nan_key_ranks_with_the_absent_group() {
     );
 }
 
-/// A pool whose only keys are `NaN` states no signal: Abstain, as an all-absent pool does.
+/// A pool whose only keys are `NaN` states the signal: it ranks by idx (1.5.5's answer), it does
+/// not Abstain; and a `NaN` ranks ahead of an absent key.
 #[test]
-fn an_all_nan_pool_abstains_as_an_all_absent_one_does() {
+fn an_all_nan_pool_ranks_by_index_and_ahead_of_absent() {
     let cands = [
+        cand(1, Some(f64::NAN), Some(f64::NAN), 1, None),
         cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
-        cand(1, Some(f64::NAN), None, 1, None),
     ];
-    assert_eq!(rank("cheapest", &cands).unwrap(), Verdict::Abstain);
-    assert_eq!(rank("fastest", &cands).unwrap(), Verdict::Abstain);
+    assert_eq!(
+        rank("cheapest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
+    assert_eq!(
+        rank("fastest", &cands).unwrap(),
+        Verdict::Prefer(vec![0, 1])
+    );
+    let mixed = [
+        cand(0, None, None, 1, None),
+        cand(1, Some(f64::NAN), None, 1, None),
+        cand(2, Some(5.0), None, 1, None),
+    ];
+    assert_eq!(
+        rank("cheapest", &mixed).unwrap(),
+        Verdict::Prefer(vec![2, 1, 0])
+    );
 }
 
 /// THE IDX TIE-BREAK, with candidates handed in NON-idx order: equal keys order by idx, in the

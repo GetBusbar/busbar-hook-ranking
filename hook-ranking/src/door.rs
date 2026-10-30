@@ -58,7 +58,7 @@ const fn marks() -> [MarkWord; WORDS.len()] {
 
 const MARKS: &[MarkWord] = &marks();
 
-/// The Statement: name, version, the hook tail and the four claimed words.
+/// The Statement: name, version, the hook tail and the claimed [`WORDS`].
 pub const STATEMENT: Statement = Statement {
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
