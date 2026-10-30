@@ -338,15 +338,15 @@ fn a_nan_key_ranks_with_the_absent_group() {
     const N: usize = 48;
     // idx % 3 == 0: NaN; idx % 5 == 0 (not 3): absent; else finite, many ties.
     let key = |idx: usize| {
-        if idx % 3 == 0 {
+        if idx.is_multiple_of(3) {
             Some(f64::NAN)
-        } else if idx % 5 == 0 {
+        } else if idx.is_multiple_of(5) {
             None
         } else {
             Some((idx % 4) as f64)
         }
     };
-    let finite = |idx: usize| idx % 3 != 0 && idx % 5 != 0;
+    let finite = |idx: usize| !idx.is_multiple_of(3) && !idx.is_multiple_of(5);
     let tail: Vec<usize> = (0..N).filter(|i| !finite(*i)).collect();
     let mut present: Vec<usize> = (0..N).filter(|i| finite(*i)).collect();
 
