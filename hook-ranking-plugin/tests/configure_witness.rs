@@ -231,7 +231,7 @@ fn a_refused_configure_is_a_nack_and_is_logged() {
             assert!(
                 warns
                     .iter()
-                    .any(|w| w.contains("hook-ranking: configure() rejected:") && w.contains(why)),
+                    .any(|w| w.contains("ranking: configure() rejected:") && w.contains(why)),
                 "{settings}: {warns:?}"
             );
         }
