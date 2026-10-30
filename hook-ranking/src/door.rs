@@ -28,7 +28,7 @@ use busbar_contract::abi::sdk::hook::{
     statement_with_tail, tail, Decoded, Hook, HookOpen, Verdict,
 };
 
-use crate::{rank, NAME, WORDS};
+use crate::{rank, ALIAS, NAME, WORDS};
 
 /// How many ops one instance holds in flight; the host clamps. Ranking is CPU-only.
 pub const MAX_INFLIGHT: u32 = 64;
@@ -90,8 +90,11 @@ impl Hook for Ranking {
                 true
             }
             Err(reason) => {
-                let why = reason.strip_prefix("hook-ranking: ").unwrap_or(&reason);
-                tracing::warn!("hook-ranking: configure() rejected: {why}");
+                let why = reason
+                    .strip_prefix(ALIAS)
+                    .and_then(|r| r.strip_prefix(": "))
+                    .unwrap_or(&reason);
+                tracing::warn!("{ALIAS}: configure() rejected: {why}");
                 false
             }
         }
@@ -102,7 +105,7 @@ impl Hook for Ranking {
 fn unknown_key(settings: &serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
     match settings.keys().find(|k| k.as_str() != "policy") {
         Some(k) => Err(format!(
-            "hook-ranking: unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
+            "{ALIAS}: unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
         )),
         None => Ok(()),
     }
@@ -110,13 +113,13 @@ fn unknown_key(settings: &serde_json::Map<String, serde_json::Value>) -> Result<
 
 /// `policy`'s value to its index in [`WORDS`], or the refusal in words.
 fn policy_index(value: &serde_json::Value) -> Result<usize, String> {
-    let word = value.as_str().ok_or_else(|| {
-        format!("hook-ranking: settings.policy must be a string, one of {WORDS:?}")
-    })?;
+    let word = value
+        .as_str()
+        .ok_or_else(|| format!("{ALIAS}: settings.policy must be a string, one of {WORDS:?}"))?;
     WORDS
         .iter()
         .position(|w| *w == word)
-        .ok_or_else(|| format!("hook-ranking: no strategy '{word}' (one of {WORDS:?})"))
+        .ok_or_else(|| format!("{ALIAS}: no strategy '{word}' (one of {WORDS:?})"))
 }
 
 /// `configure`'s merge, in `open`'s grammar: `Ok(None)` acknowledges and changes nothing (no
@@ -142,17 +145,17 @@ impl HookOpen for Open {
             settings
         };
         let doc: serde_json::Value = serde_json::from_str(settings)
-            .map_err(|e| format!("hook-ranking: the settings are not JSON: {e}"))?;
+            .map_err(|e| format!("{ALIAS}: the settings are not JSON: {e}"))?;
         let obj = doc.as_object().ok_or_else(|| {
             format!(
-                "hook-ranking: the settings must be an object {{\"policy\": \"<word>\"}}, one of {WORDS:?}"
+                "{ALIAS}: the settings must be an object {{\"policy\": \"<word>\"}}, one of {WORDS:?}"
             )
         })?;
         unknown_key(obj)?;
         let index = policy_index(
             obj.get("policy")
                 // The host's double mirrors this text byte for byte (busbar `ranking_double.rs`).
-                .ok_or_else(|| "hook-ranking: settings.policy is required".to_string())?,
+                .ok_or_else(|| format!("{ALIAS}: settings.policy is required"))?,
         )?;
         Ok(Box::new(Ranking(AtomicUsize::new(index))))
     }

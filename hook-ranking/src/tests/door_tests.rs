@@ -54,8 +54,9 @@ fn a_non_object_document_is_refused_as_such() {
 fn a_missing_policy_is_required() {
     let m = refusal("{}");
     // Byte for byte: busbar's ranking double and its parity test (`linked_hook_ranking.rs`)
-    // compare this refusal with the door's.
-    assert_eq!(m, "hook-ranking: settings.policy is required");
+    // compare this refusal with the door's. The prefix is the alias an operator names the hook
+    // by (`ranking`), as the webrequest hook's refusals start `webrequest: `.
+    assert_eq!(m, "ranking: settings.policy is required");
 }
 
 #[test]
@@ -82,11 +83,7 @@ fn every_word_opens() {
 fn an_empty_document_is_a_missing_policy() {
     // The SDK reads an empty settings blob as `{}`; so does the door.
     for s in ["", "  \n"] {
-        assert_eq!(
-            refusal(s),
-            "hook-ranking: settings.policy is required",
-            "{s:?}"
-        );
+        assert_eq!(refusal(s), "ranking: settings.policy is required", "{s:?}");
     }
 }
 
@@ -136,4 +133,22 @@ fn a_nacked_configure_leaves_the_live_strategy() {
     assert_eq!(hook.word(), "usage", "a NACK commits nothing");
     assert!(hook.configure(&map("{}"), 5));
     assert_eq!(hook.word(), "usage");
+}
+
+#[test]
+fn every_settings_refusal_starts_with_the_alias() {
+    let refusals = [
+        refusal("not json"),
+        refusal("[]"),
+        refusal("{}"),
+        refusal(r#"{"policy":5}"#),
+        refusal(r#"{"policy":"nope"}"#),
+        refusal(r#"{"policy":"cheapest","x":1}"#),
+        configured(&map(r#"{"policy":"nope"}"#)).expect_err("an unknown word"),
+        configured(&map(r#"{"policy":5}"#)).expect_err("a non-string policy"),
+        configured(&map(r#"{"x":1}"#)).expect_err("an unknown key"),
+    ];
+    for m in refusals {
+        assert!(m.starts_with("ranking: "), "{m}");
+    }
 }

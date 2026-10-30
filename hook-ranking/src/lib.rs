@@ -99,8 +99,13 @@ pub const WORDS: [&str; 4] = [
     POLICY_NAME_USAGE,
 ];
 
-/// The plugin's name: its Statement's, and the linked row's.
-pub const NAME: &str = "hooks-ranking";
+/// The plugin's name: its Statement's, and the linked row's (`busbar-<kind>-<name>`, as every
+/// plugin's).
+pub const NAME: &str = "busbar-hook-ranking";
+
+/// The alias a hook reference names this plugin by (`module: ranking`), and the prefix of its
+/// settings refusals.
+pub const ALIAS: &str = "ranking";
 
 /// THE LINKED ENTRY: what a build that links the ranking hook registers on the hook axis — its
 /// door, the same door a dropped-in build of it exports. Its hook words are [`WORDS`].
