@@ -270,8 +270,10 @@ version = "1.6.0"
 dependencies = [
  "busbar-contract",
  "busbar-hook-ranking",
+ "busbar-hook-ranking-plugin",
  "busbar-plugin-loader",
  "busbar-test-kit",
+ "serde_json",
 ]
 
 [[package]]

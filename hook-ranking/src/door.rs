@@ -15,14 +15,14 @@
 //!   Statement's tail asks for none) and never pends: no need is declared.
 //! * `transform` / `notify` / `status` / `describe` are the SDK's defaults.
 //!
-//! The Statement claims the four strategy words as hook word marks.
+//! The Statement claims the strategy words ([`crate::WORDS`]) as hook word marks.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::Poll;
 
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
-use busbar_contract::abi::mechanism::door::{MarkWord, Statement, MARK_WORD_HOOK};
-use busbar_contract::abi::sdk::door::{abi_str, statement};
+use busbar_contract::abi::mechanism::door::{MarkWord, Rewrite, Statement, MARK_WORD_HOOK};
+use busbar_contract::abi::sdk::door::{abi_str, alias, statement};
 use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{
     statement_with_tail, tail, Decoded, Hook, HookOpen, Verdict,
@@ -44,16 +44,30 @@ const fn word(w: &'static str) -> MarkWord {
     }
 }
 
-/// The hook words, one mark each.
-const MARKS: &[MarkWord] = &[
-    word(WORDS[0]),
-    word(WORDS[1]),
-    word(WORDS[2]),
-    word(WORDS[3]),
-];
+/// The hook words, one mark each: built from [`WORDS`] by mapping, so a word added there is claimed
+/// here (and `rank` must answer it: `rank_knows_its_words_and_no_others` iterates [`WORDS`]).
+const fn marks() -> [MarkWord; WORDS.len()] {
+    let mut out = [word(WORDS[0]); WORDS.len()];
+    let mut i = 1;
+    while i < WORDS.len() {
+        out[i] = word(WORDS[i]);
+        i += 1;
+    }
+    out
+}
 
-/// The Statement: name, version, the hook tail and the four claimed words.
+const MARKS: &[MarkWord] = &marks();
+
+/// The module name an operator writes, as the alias the registry holds beside [`NAME`].
+const REWRITES: &[Rewrite] = &[alias(ALIAS)];
+
+/// The catalogue code a refused `configure` is raised under (declared in `declares.json`).
+pub const CONFIGURE_REFUSED: &str = "BUSBAR-7150";
+
+/// The Statement: name, version, the hook tail, the alias and the claimed [`WORDS`].
 pub const STATEMENT: Statement = Statement {
+    rewrites: REWRITES.as_ptr(),
+    rewrites_len: REWRITES.len(),
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
     ..statement_with_tail(
@@ -89,42 +103,38 @@ impl Hook for Ranking {
                 self.0.store(i, Ordering::Release);
                 true
             }
-            Err(reason) => {
-                let why = reason
-                    .strip_prefix(ALIAS)
-                    .and_then(|r| r.strip_prefix(": "))
-                    .unwrap_or(&reason);
-                tracing::warn!("{ALIAS}: configure() rejected: {why}");
+            Err(why) => {
+                tracing::warn!(diag = %CONFIGURE_REFUSED, "{ALIAS}: configure() rejected: {why}");
                 false
             }
         }
     }
 }
 
-/// The refusal for a settings key other than `policy`, if `settings` holds one.
+/// The refusal (without the alias prefix: the caller adds it once) for a settings key other than `policy`, if `settings` holds one.
 fn unknown_key(settings: &serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
     match settings.keys().find(|k| k.as_str() != "policy") {
         Some(k) => Err(format!(
-            "{ALIAS}: unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
+            "unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
         )),
         None => Ok(()),
     }
 }
 
-/// `policy`'s value to its index in [`WORDS`], or the refusal in words.
+/// `policy`'s value to its index in [`WORDS`], or the refusal in words (no alias prefix).
 fn policy_index(value: &serde_json::Value) -> Result<usize, String> {
     let word = value
         .as_str()
-        .ok_or_else(|| format!("{ALIAS}: settings.policy must be a string, one of {WORDS:?}"))?;
+        .ok_or_else(|| format!("settings.policy must be a string, one of {WORDS:?}"))?;
     WORDS
         .iter()
         .position(|w| *w == word)
-        .ok_or_else(|| format!("{ALIAS}: no strategy '{word}' (one of {WORDS:?})"))
+        .ok_or_else(|| format!("no strategy '{word}' (one of {WORDS:?})"))
 }
 
 /// `configure`'s merge, in `open`'s grammar: `Ok(None)` acknowledges and changes nothing (no
 /// `policy` pushed), `Ok(Some(i))` acknowledges with [`WORDS`]`[i]` the new live strategy, `Err`
-/// is the NACK's reason (the live strategy is untouched).
+/// is the NACK's reason, without the alias prefix (the live strategy is untouched).
 fn configured(
     settings: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Option<usize>, String> {
@@ -151,12 +161,13 @@ impl HookOpen for Open {
                 "{ALIAS}: the settings must be an object {{\"policy\": \"<word>\"}}, one of {WORDS:?}"
             )
         })?;
-        unknown_key(obj)?;
+        unknown_key(obj).map_err(|why| format!("{ALIAS}: {why}"))?;
         let index = policy_index(
             obj.get("policy")
                 // The host's double mirrors this text byte for byte (busbar `ranking_double.rs`).
                 .ok_or_else(|| format!("{ALIAS}: settings.policy is required"))?,
-        )?;
+        )
+        .map_err(|why| format!("{ALIAS}: {why}"))?;
         Ok(Box::new(Ranking(AtomicUsize::new(index))))
     }
 }

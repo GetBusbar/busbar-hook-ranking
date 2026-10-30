@@ -231,10 +231,28 @@ fn a_refused_configure_is_a_nack_and_is_logged() {
             assert!(
                 warns
                     .iter()
-                    .any(|w| w.contains("ranking: configure() rejected:") && w.contains(why)),
+                    .any(|w| w.contains("ranking: configure() rejected:")
+                        && w.contains(why)
+                        && w.contains("BUSBAR-7150")),
                 "{settings}: {warns:?}"
             );
         }
         assert_eq!(b.order(), vec![0, 1], "a NACK commits nothing");
     }
+}
+
+/// The refusal's code is declared: `declares.json` carries 7150 as an actionable diagnostic.
+#[test]
+fn the_configure_refusal_code_is_declared() {
+    let declares: serde_json::Value =
+        serde_json::from_str(include_str!("../../hook-ranking/declares.json")).unwrap();
+    let diags = declares["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["code"], 7150);
+    assert_eq!(
+        format!("BUSBAR-{}", diags[0]["code"]),
+        busbar_hook_ranking::door::CONFIGURE_REFUSED
+    );
+    assert_eq!(diags[0]["severity"], "actionable");
+    assert_eq!(diags[0]["since"], "1.6.0");
 }

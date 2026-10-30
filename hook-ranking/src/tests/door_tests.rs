@@ -144,9 +144,6 @@ fn every_settings_refusal_starts_with_the_alias() {
         refusal(r#"{"policy":5}"#),
         refusal(r#"{"policy":"nope"}"#),
         refusal(r#"{"policy":"cheapest","x":1}"#),
-        configured(&map(r#"{"policy":"nope"}"#)).expect_err("an unknown word"),
-        configured(&map(r#"{"policy":5}"#)).expect_err("a non-string policy"),
-        configured(&map(r#"{"x":1}"#)).expect_err("an unknown key"),
     ];
     for m in refusals {
         assert!(m.starts_with("ranking: "), "{m}");

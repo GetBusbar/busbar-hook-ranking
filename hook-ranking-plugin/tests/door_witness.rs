@@ -287,3 +287,24 @@ fn every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending() {
         }
     }
 }
+
+/// THE RENDERED STATEMENT CLAIMS THE FOUR WORDS, as hook word marks, in [`WORDS`]' order: the
+/// rendering carries the mark count and then, per mark, its class (`MARK_WORD_HOOK`), the word's
+/// length and the word.
+#[test]
+fn the_rendered_statement_claims_every_word_as_a_hook_mark() {
+    use busbar_contract::abi::mechanism::door::MARK_WORD_HOOK;
+    let rendering = rendering_of(busbar_hook_ranking::linked::door).expect("the door renders");
+    let mut want = Vec::new();
+    want.extend_from_slice(&(WORDS.len() as u32).to_le_bytes());
+    for w in WORDS {
+        want.extend_from_slice(&MARK_WORD_HOOK.to_le_bytes());
+        want.extend_from_slice(&(w.len() as u32).to_le_bytes());
+        want.extend_from_slice(w.as_bytes());
+    }
+    assert!(
+        rendering.windows(want.len()).any(|w| w == want.as_slice()),
+        "the word marks are not in the rendering: {:?}",
+        String::from_utf8_lossy(&rendering)
+    );
+}

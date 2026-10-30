@@ -40,7 +40,7 @@ is written to the plugin's own log.
 ## Build
 
 ```bash
-cargo build --release -p busbar-hook-ranking-plugin
+cargo build --release -p busbar-hook-ranking-plugin --features dropped-in
 ```
 
 ## Tests
