@@ -1,1 +1,13 @@
-{}
+{
+  "diagnostics": [
+    {
+      "code": 7150,
+      "slug": "ranking-configure-refused",
+      "title": "Ranking hook settings push refused (live strategy unchanged)",
+      "severity": "actionable",
+      "summary": "A pushed settings document for the ranking hook was refused (an unknown key, a non-string `policy`, or a strategy word the hook does not claim), so the push was NACKed and the hook keeps ranking by the strategy it already had. The reason is in the line.",
+      "action": "Fix the named hook's settings (`policy` is one of cheapest, fastest, least_busy, usage; no other key) and reload the configuration.",
+      "since": "1.6.0"
+    }
+  ]
+}

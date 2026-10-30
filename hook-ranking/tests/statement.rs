@@ -58,7 +58,8 @@ fn the_statement_states_the_alias_rewrite() {
     use busbar_hook_ranking::ALIAS;
     assert_eq!(STATEMENT.rewrites_len, 1);
     // SAFETY: `rewrites` is the door's `'static` table of `rewrites_len` entries.
-    let rewrites = unsafe { std::slice::from_raw_parts(STATEMENT.rewrites, STATEMENT.rewrites_len) };
+    let rewrites =
+        unsafe { std::slice::from_raw_parts(STATEMENT.rewrites, STATEMENT.rewrites_len) };
     assert_eq!(rewrites[0].class, REWRITE_ALIAS);
     // SAFETY: `from` is a `'static` UTF-8 string of its stated length.
     let from = unsafe { std::slice::from_raw_parts(rewrites[0].from.ptr, rewrites[0].from.len) };

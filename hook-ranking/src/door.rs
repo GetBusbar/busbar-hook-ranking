@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::Poll;
 
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
-use busbar_contract::abi::mechanism::door::{MarkWord, Statement, MARK_WORD_HOOK};
-use busbar_contract::abi::sdk::door::{abi_str, statement};
+use busbar_contract::abi::mechanism::door::{MarkWord, Rewrite, Statement, MARK_WORD_HOOK};
+use busbar_contract::abi::sdk::door::{abi_str, alias, statement};
 use busbar_contract::abi::sdk::exchange::Op;
 use busbar_contract::abi::sdk::hook::{
     statement_with_tail, tail, Decoded, Hook, HookOpen, Verdict,
@@ -58,8 +58,16 @@ const fn marks() -> [MarkWord; WORDS.len()] {
 
 const MARKS: &[MarkWord] = &marks();
 
-/// The Statement: name, version, the hook tail and the claimed [`WORDS`].
+/// The module name an operator writes, as the alias the registry holds beside [`NAME`].
+const REWRITES: &[Rewrite] = &[alias(ALIAS)];
+
+/// The catalogue code a refused `configure` is raised under (declared in `declares.json`).
+pub const CONFIGURE_REFUSED: &str = "BUSBAR-7150";
+
+/// The Statement: name, version, the hook tail, the alias and the claimed [`WORDS`].
 pub const STATEMENT: Statement = Statement {
+    rewrites: REWRITES.as_ptr(),
+    rewrites_len: REWRITES.len(),
     mark_words: MARKS.as_ptr(),
     mark_words_len: MARKS.len(),
     ..statement_with_tail(
@@ -96,7 +104,7 @@ impl Hook for Ranking {
                 true
             }
             Err(why) => {
-                tracing::warn!("{ALIAS}: configure() rejected: {why}");
+                tracing::warn!(diag = %CONFIGURE_REFUSED, "{ALIAS}: configure() rejected: {why}");
                 false
             }
         }

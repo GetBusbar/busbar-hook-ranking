@@ -249,6 +249,10 @@ fn the_configure_refusal_code_is_declared() {
     let diags = declares["diagnostics"].as_array().expect("diagnostics");
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["code"], 7150);
+    assert_eq!(
+        format!("BUSBAR-{}", diags[0]["code"]),
+        busbar_hook_ranking::door::CONFIGURE_REFUSED
+    );
     assert_eq!(diags[0]["severity"], "actionable");
     assert_eq!(diags[0]["since"], "1.6.0");
 }
