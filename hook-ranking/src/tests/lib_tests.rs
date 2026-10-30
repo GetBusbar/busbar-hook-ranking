@@ -307,54 +307,124 @@ fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
     }
 }
 
-/// A POOL WITH `NaN` KEYS RANKS AS 1.5.5 RANKED IT (hook behaviour is frozen at 1.5.5; the
-/// "coordinator ruling 2026-10-18" a former version cited is recorded nowhere): 1.5.5's comparator
-/// made a `NaN` tie every number and the index decide, and the order is whatever that comparator
-/// and the standard sort give. Pinned to `order_1_5_5` (a verbatim copy of 1.5.5's comparator) over
-/// pools of up to 20 candidates, the sort's insertion-sort range, where a comparator that is no
-/// total order cannot panic; ascending and descending. RED before the fix: a `NaN` sorted after
-/// every number.
+/// Candidates in a NON-monotone idx order (`idx = (i * 7) % n`, `n` coprime to 7), the key of each
+/// from `key(idx)`, so only the comparator's idx tie-break, never the input order, can produce a
+/// sorted answer.
+fn shuffled(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<Option<f64>> {
+    (0..n).map(|i| key((i * 7) % n)).collect()
+}
+
+fn pool_cost(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<DecodedCandidate<'static>> {
+    let ks = shuffled(n, &key);
+    (0..n)
+        .map(|i| cand((i * 7) % n, ks[i], None, 1, None))
+        .collect()
+}
+
+fn pool_rate(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<DecodedCandidate<'static>> {
+    let ks = shuffled(n, &key);
+    (0..n)
+        .map(|i| cand_rate((i * 7) % n, None, None, 1, None, ks[i]))
+        .collect()
+}
+
+/// A `NaN` KEY IS AN ABSENT KEY. `NaN` makes `partial_cmp` partial, so a comparator that let it tie
+/// every number is no total order and the standard sort may panic past its insertion-sort range
+/// (more than 20 candidates). A `NaN` joins the absent group, ordered by idx behind every number,
+/// so the comparator is total. 48 candidates in a non-monotone idx order, `NaN`, absent and finite
+/// keys mixed, ascending (`cheapest`) and descending (`usage`), the exact order asserted.
 #[test]
-fn a_nan_pool_ranks_as_1_5_5_ranked_it() {
-    for seed in 1..=64_u64 {
-        for n in [1, 2, 3, 4, 7, 12, 19, 20] {
-            let ks = keys(seed * 131 + n as u64, n, true);
-            if ks.iter().all(Option::is_none) {
-                continue;
-            }
-            let cost: Vec<_> = ks
-                .iter()
-                .enumerate()
-                .map(|(i, k)| cand(i, *k, None, 1, None))
-                .collect();
-            assert_eq!(
-                rank("cheapest", &cost).unwrap(),
-                Verdict::Prefer(order_1_5_5(&ks, false)),
-                "ascending, seed {seed}, n {n}: {ks:?}"
-            );
-            let rate: Vec<_> = ks
-                .iter()
-                .enumerate()
-                .map(|(i, k)| cand_rate(i, None, None, 1, None, *k))
-                .collect();
-            assert_eq!(
-                rank("usage", &rate).unwrap(),
-                Verdict::Prefer(order_1_5_5(&ks, true)),
-                "descending, seed {seed}, n {n}: {ks:?}"
-            );
+fn a_nan_key_ranks_with_the_absent_group() {
+    const N: usize = 48;
+    // idx % 3 == 0: NaN; idx % 5 == 0 (not 3): absent; else finite, many ties.
+    let key = |idx: usize| {
+        if idx % 3 == 0 {
+            Some(f64::NAN)
+        } else if idx % 5 == 0 {
+            None
+        } else {
+            Some((idx % 4) as f64)
         }
-    }
-    // The case a former version called wrong: costs [2.0, NaN, 1.0] rank as 1.5.5's comparator
-    // ranked them, not with the NaN pushed last.
-    let ks = [Some(2.0), Some(f64::NAN), Some(1.0)];
-    let cands: Vec<_> = ks
+    };
+    let finite = |idx: usize| idx % 3 != 0 && idx % 5 != 0;
+    let tail: Vec<usize> = (0..N).filter(|i| !finite(*i)).collect();
+    let mut present: Vec<usize> = (0..N).filter(|i| finite(*i)).collect();
+
+    present.sort_by_key(|i| (i % 4, *i));
+    let want: Vec<usize> = present
         .iter()
-        .enumerate()
-        .map(|(i, k)| cand(i, *k, None, 1, None))
+        .copied()
+        .chain(tail.iter().copied())
         .collect();
     assert_eq!(
+        rank("cheapest", &pool_cost(N, key)).unwrap(),
+        Verdict::Prefer(want),
+        "ascending"
+    );
+
+    present.sort_by_key(|i| (std::cmp::Reverse(i % 4), *i));
+    let want: Vec<usize> = present
+        .iter()
+        .copied()
+        .chain(tail.iter().copied())
+        .collect();
+    assert_eq!(
+        rank("usage", &pool_rate(N, key)).unwrap(),
+        Verdict::Prefer(want),
+        "descending"
+    );
+}
+
+/// A pool whose only keys are `NaN` states no signal: Abstain, as an all-absent pool does.
+#[test]
+fn an_all_nan_pool_abstains_as_an_all_absent_one_does() {
+    let cands = [
+        cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
+        cand(1, Some(f64::NAN), None, 1, None),
+    ];
+    assert_eq!(rank("cheapest", &cands).unwrap(), Verdict::Abstain);
+    assert_eq!(rank("fastest", &cands).unwrap(), Verdict::Abstain);
+}
+
+/// THE IDX TIE-BREAK, with candidates handed in NON-idx order: equal keys order by idx, in the
+/// ascending and the descending rankings, and the absent group orders by idx, so the answer is the
+/// comparator's and not the input's.
+#[test]
+fn ties_and_the_absent_group_break_by_idx_whatever_the_input_order() {
+    // Ascending: idx 4 and 1 tie at 1.0, idx 3 is cheaper, 5 and 0 and 2 are absent.
+    let cands = [
+        cand(4, Some(1.0), None, 1, None),
+        cand(5, None, None, 1, None),
+        cand(1, Some(1.0), None, 1, None),
+        cand(2, None, None, 1, None),
+        cand(3, Some(0.5), None, 1, None),
+        cand(0, None, None, 1, None),
+    ];
+    assert_eq!(
         rank("cheapest", &cands).unwrap(),
-        Verdict::Prefer(order_1_5_5(&ks, false))
+        Verdict::Prefer(vec![3, 1, 4, 0, 2, 5])
+    );
+    // Descending: `usage` (largest first) and `least_busy`, ties and the absent group by idx.
+    let rates = [
+        cand_rate(4, None, None, 1, None, Some(0.5)),
+        cand_rate(5, None, None, 1, None, None),
+        cand_rate(1, None, None, 1, None, Some(0.5)),
+        cand_rate(2, None, None, 1, None, None),
+        cand_rate(3, None, None, 1, None, Some(0.9)),
+        cand_rate(0, None, None, 1, None, None),
+    ];
+    assert_eq!(
+        rank("usage", &rates).unwrap(),
+        Verdict::Prefer(vec![3, 1, 4, 0, 2, 5])
+    );
+    let busy = [
+        cand(2, None, None, 3, None),
+        cand(0, None, None, 3, None),
+        cand(1, None, None, 7, None),
+    ];
+    assert_eq!(
+        rank("least_busy", &busy).unwrap(),
+        Verdict::Prefer(vec![1, 0, 2])
     );
 }
 
@@ -387,26 +457,6 @@ fn an_infinite_signal_ranks_as_1_5_5_ranked_it() {
         cand(0, None, Some(f64::INFINITY), 1, None),
         cand(1, None, None, 1, None),
     ];
-    assert_eq!(
-        rank("fastest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1])
-    );
-}
-
-/// AN ALL-`NaN` POOL RANKS BY INDEX, as 1.5.5 ranked it: every candidate states the signal, so the
-/// ranking has an opinion (Abstain is only for a signal ABSENT on all), and with no key it can
-/// order, every one ties and the index decides. RED before the fix: a `NaN` read as absent, so the
-/// pool Abstained.
-#[test]
-fn an_all_nan_pool_ranks_by_index_as_1_5_5_did() {
-    let cands = [
-        cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
-        cand(1, Some(f64::NAN), Some(f64::NAN), 1, None),
-    ];
-    assert_eq!(
-        rank("cheapest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1])
-    );
     assert_eq!(
         rank("fastest", &cands).unwrap(),
         Verdict::Prefer(vec![0, 1])
