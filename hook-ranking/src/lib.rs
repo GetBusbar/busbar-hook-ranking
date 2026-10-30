@@ -12,11 +12,11 @@
 //! ordered. Only when the signal is ABSENT on every candidate is the answer `Abstain` (no opinion,
 //! default SWRR). Ties break by `idx`, so an order is the same on every call.
 //!
-//! A `NaN` key is ordered by `partial_cmp(..).unwrap_or(Equal)` then the index, so a `NaN` ties
-//! every number and the order among a pool holding one is whatever that comparator and the standard
-//! sort give. No `NaN` reaches a ranking in practice: every key is finite upstream (the validator
-//! refuses a rate that is not finite and non-negative; a latency EWMA drops every sample that is not
-//! finite and positive; a rate headroom is clamped into `[0, 1]`; concurrency is an integer).
+//! A `NaN` key is an ABSENT key: it joins the absent group (behind every number, ordered by `idx`),
+//! so the comparator is a total order and the standard sort cannot panic on it. No `NaN` reaches a
+//! ranking in practice (the validator refuses a rate that is not finite and non-negative; a latency
+//! EWMA drops every sample that is not finite and positive; a rate headroom is clamped into
+//! `[0, 1]`; concurrency is an integer); this keeps a stray one harmless.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -31,9 +31,10 @@ const POLICY_NAME_FASTEST: &str = "fastest";
 const POLICY_NAME_LEAST_BUSY: &str = "least_busy";
 const POLICY_NAME_USAGE: &str = "usage";
 
-/// The one key order both directions share: present keys by `partial_cmp`
-/// (`reverse` for the descending rankings; a pair that does not compare, a `NaN` among them, is
-/// `Equal`), then the index; a present key before an absent one; absent keys by index.
+/// The one key order both directions share: present keys by `partial_cmp` (`reverse` for the
+/// descending rankings), then the index; a present key before an absent one; absent keys by index.
+/// A present key is never `NaN` ([`rank_by`] reads a `NaN` as absent), so `partial_cmp` is total
+/// over the keys that reach here.
 fn key_order<K: PartialOrd>(
     (ia, ka): &(usize, Option<K>),
     (ib, kb): &(usize, Option<K>),
@@ -53,14 +54,17 @@ fn key_order<K: PartialOrd>(
 
 /// Rank candidates by a key: smallest key first, or with `descending` the LARGEST signal first.
 /// Candidates whose key is `None` are demoted to the end but still ranked among themselves by `idx`,
-/// never dropped, so a member with missing signal data is reachable. A `NaN` key ties every number
-/// ([`key_order`]). Returns `Abstain` if the signal is ABSENT on every candidate.
+/// never dropped, so a member with missing signal data is reachable. A `NaN` key is an absent key.
+/// Returns `Abstain` if the signal is ABSENT on every candidate.
 fn rank_by<K: PartialOrd + Copy>(
     candidates: &[DecodedCandidate<'_>],
     descending: bool,
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
-    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
+    let mut keyed: Vec<(usize, Option<K>)> = candidates
+        .iter()
+        .map(|c| (c.idx, key(c).filter(|k| k.partial_cmp(k).is_some())))
+        .collect();
     // Abstain only when the signal is ABSENT on every candidate.
     if keyed.iter().all(|(_, k)| k.is_none()) {
         return Verdict::Abstain;
