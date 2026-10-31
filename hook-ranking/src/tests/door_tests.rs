@@ -21,7 +21,7 @@ fn assert_lists_words(msg: &str) {
 #[test]
 fn an_unknown_key_is_refused_by_name() {
     let m = refusal(r#"{"policy":"cheapest","fallback":"fastest"}"#);
-    assert!(m.contains("unknown setting \"fallback\""), "{m}");
+    assert!(m.contains("unknown setting 'fallback'"), "{m}");
     assert!(m.contains("cheapest"), "{m}");
     assert_lists_words(&m);
 }
@@ -68,7 +68,7 @@ fn non_json_is_refused() {
 #[test]
 fn an_unknown_word_is_refused() {
     let m = refusal(r#"{"policy":"nope"}"#);
-    assert!(m.contains("no strategy \"nope\""), "{m}");
+    assert!(m.contains("no strategy 'nope'"), "{m}");
 }
 
 #[test]
