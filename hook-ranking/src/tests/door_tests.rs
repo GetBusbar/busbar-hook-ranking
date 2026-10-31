@@ -21,7 +21,7 @@ fn assert_lists_words(msg: &str) {
 #[test]
 fn an_unknown_key_is_refused_by_name() {
     let m = refusal(r#"{"policy":"cheapest","fallback":"fastest"}"#);
-    assert!(m.contains("unknown setting 'fallback'"), "{m}");
+    assert!(m.contains("unknown setting \"fallback\""), "{m}");
     assert!(m.contains("cheapest"), "{m}");
     assert_lists_words(&m);
 }
@@ -68,7 +68,7 @@ fn non_json_is_refused() {
 #[test]
 fn an_unknown_word_is_refused() {
     let m = refusal(r#"{"policy":"nope"}"#);
-    assert!(m.contains("no strategy 'nope'"), "{m}");
+    assert!(m.contains("no strategy \"nope\""), "{m}");
 }
 
 #[test]
@@ -107,13 +107,13 @@ fn configure_with_a_word_moves_the_live_strategy() {
 }
 
 #[test]
-fn configure_refuses_in_open_s_words() {
+fn configure_refuses_in_open_s_words_with_the_operator_s_text_escaped() {
     for (s, want) in [
-        (r#"{"policy":"nope"}"#, "no strategy 'nope'"),
+        (r#"{"policy":"nope"}"#, "no strategy \"nope\""),
         (r#"{"policy":5}"#, "settings.policy must be a string"),
         (
             r#"{"policy":"cheapest","fallback":"x"}"#,
-            "unknown setting 'fallback'",
+            "unknown setting \"fallback\"",
         ),
     ] {
         let m = configured(&map(s)).expect_err(s);
@@ -124,7 +124,10 @@ fn configure_refuses_in_open_s_words() {
 
 #[test]
 fn a_nacked_configure_leaves_the_live_strategy() {
-    let hook = Ranking(AtomicUsize::new(1));
+    let hook = Ranking {
+        word: AtomicUsize::new(1),
+        applied: Mutex::new(0),
+    };
     assert!(!hook.configure(&map(r#"{"policy":"nope"}"#), 2));
     assert_eq!(hook.word(), "fastest");
     assert!(hook.configure(&map(r#"{"policy":"usage"}"#), 3));

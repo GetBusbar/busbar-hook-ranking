@@ -18,6 +18,7 @@
 //! The Statement claims the strategy words ([`crate::WORDS`]) as hook word marks.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::task::Poll;
 
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
@@ -79,11 +80,16 @@ pub const STATEMENT: Statement = Statement {
 /// One opened ranking: the index into [`WORDS`] of the strategy its settings named, swapped by
 /// `configure`.
 #[derive(Debug)]
-pub struct Ranking(AtomicUsize);
+pub struct Ranking {
+    word: AtomicUsize,
+    /// The highest `configure` version applied; held across the check and the swap, so a
+    /// concurrent older push can never overwrite a newer one.
+    applied: Mutex<u64>,
+}
 
 impl Ranking {
     fn word(&self) -> &'static str {
-        WORDS[self.0.load(Ordering::Acquire)]
+        WORDS[self.word.load(Ordering::Acquire)]
     }
 }
 
@@ -95,12 +101,20 @@ impl Hook for Ranking {
     fn configure(
         &self,
         settings: &serde_json::Map<String, serde_json::Value>,
-        _version: u64,
+        version: u64,
     ) -> bool {
+        // Held across validate, check and swap: the highest applied version wins.
+        let mut applied = self.applied.lock().unwrap_or_else(|e| e.into_inner());
         match configured(settings) {
-            Ok(None) => true,
+            // A push older than the applied one is acknowledged and not applied.
+            Ok(_) if version < *applied => true,
+            Ok(None) => {
+                *applied = version;
+                true
+            }
             Ok(Some(i)) => {
-                self.0.store(i, Ordering::Release);
+                self.word.store(i, Ordering::Release);
+                *applied = version;
                 true
             }
             Err(why) => {
@@ -112,8 +126,14 @@ impl Hook for Ranking {
 }
 
 /// The refusal (without the alias prefix: the caller adds it once) for a settings key other than `policy`, if `settings` holds one.
-fn unknown_key(settings: &serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
+fn unknown_key(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    escape: bool,
+) -> Result<(), String> {
     match settings.keys().find(|k| k.as_str() != "policy") {
+        Some(k) if escape => Err(format!(
+            "unknown setting {k:?} (the one setting is `policy`, one of {WORDS:?})"
+        )),
         Some(k) => Err(format!(
             "unknown setting '{k}' (the one setting is `policy`, one of {WORDS:?})"
         )),
@@ -122,14 +142,17 @@ fn unknown_key(settings: &serde_json::Map<String, serde_json::Value>) -> Result<
 }
 
 /// `policy`'s value to its index in [`WORDS`], or the refusal in words (no alias prefix).
-fn policy_index(value: &serde_json::Value) -> Result<usize, String> {
+fn policy_index(value: &serde_json::Value, escape: bool) -> Result<usize, String> {
     let word = value
         .as_str()
         .ok_or_else(|| format!("settings.policy must be a string, one of {WORDS:?}"))?;
-    WORDS
-        .iter()
-        .position(|w| *w == word)
-        .ok_or_else(|| format!("no strategy '{word}' (one of {WORDS:?})"))
+    WORDS.iter().position(|w| *w == word).ok_or_else(|| {
+        if escape {
+            format!("no strategy {word:?} (one of {WORDS:?})")
+        } else {
+            format!("no strategy '{word}' (one of {WORDS:?})")
+        }
+    })
 }
 
 /// `configure`'s merge, in `open`'s grammar: `Ok(None)` acknowledges and changes nothing (no
@@ -138,8 +161,12 @@ fn policy_index(value: &serde_json::Value) -> Result<usize, String> {
 fn configured(
     settings: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Option<usize>, String> {
-    unknown_key(settings)?;
-    settings.get("policy").map(policy_index).transpose()
+    // `configure`'s refusal lands in the log: the operator's word is Debug-escaped there.
+    unknown_key(settings, true)?;
+    settings
+        .get("policy")
+        .map(|v| policy_index(v, true))
+        .transpose()
 }
 
 /// Opens a [`Ranking`] from `{"policy": "<word>"}`.
@@ -161,14 +188,18 @@ impl HookOpen for Open {
                 "{ALIAS}: the settings must be an object {{\"policy\": \"<word>\"}}, one of {WORDS:?}"
             )
         })?;
-        unknown_key(obj).map_err(|why| format!("{ALIAS}: {why}"))?;
+        unknown_key(obj, false).map_err(|why| format!("{ALIAS}: {why}"))?;
         let index = policy_index(
             obj.get("policy")
                 // The host's double mirrors this text byte for byte (busbar `ranking_double.rs`).
                 .ok_or_else(|| format!("{ALIAS}: settings.policy is required"))?,
+            false,
         )
         .map_err(|why| format!("{ALIAS}: {why}"))?;
-        Ok(Box::new(Ranking(AtomicUsize::new(index))))
+        Ok(Box::new(Ranking {
+            word: AtomicUsize::new(index),
+            applied: Mutex::new(0),
+        }))
     }
 }
 

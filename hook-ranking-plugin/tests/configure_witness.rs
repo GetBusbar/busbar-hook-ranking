@@ -218,9 +218,9 @@ fn a_refused_configure_is_a_nack_and_is_logged() {
         let b = bind(dropped);
         assert_eq!(b.open(r#"{"policy": "cheapest"}"#), Outcome::Ready);
         for (n, (settings, why)) in [
-            (r#"{"policy": "nope"}"#, "no strategy 'nope'"),
+            (r#"{"policy": "nope"}"#, "no strategy \"nope\""),
             (r#"{"policy": 5}"#, "settings.policy must be a string"),
-            (r#"{"policy": "fastest", "x": 1}"#, "unknown setting 'x'"),
+            (r#"{"policy": "fastest", "x": 1}"#, "unknown setting \"x\""),
         ]
         .into_iter()
         .enumerate()
