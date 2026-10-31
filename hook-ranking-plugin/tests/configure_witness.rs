@@ -298,3 +298,22 @@ fn a_hostile_word_or_key_cannot_forge_log_lines() {
         }
     }
 }
+
+/// A stale push that would not validate is still ACKed (not applied, not logged as a refusal):
+/// the version check runs before validation.
+#[test]
+fn a_stale_push_that_would_not_validate_is_still_acked() {
+    for dropped in [false, true] {
+        let b = bind(dropped);
+        assert_eq!(b.open(r#"{"policy": "cheapest"}"#), Outcome::Ready);
+        assert_eq!(b.configure(r#"{"policy": "fastest"}"#, 8).0, Outcome::Ready);
+        assert_eq!(
+            b.configure(r#"{"policy": "nope"}"#, 7).0,
+            Outcome::Ready,
+            "stale: ACKed (dropped={dropped})"
+        );
+        assert!(b.recorder.warns().is_empty(), "{:?}", b.recorder.warns());
+        assert_eq!(b.order(), vec![1, 0]);
+        assert_eq!(b.configure(r#"{"policy": "nope"}"#, 9).0, Outcome::Failed);
+    }
+}
