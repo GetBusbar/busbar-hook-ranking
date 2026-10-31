@@ -256,3 +256,45 @@ fn the_configure_refusal_code_is_declared() {
     assert_eq!(diags[0]["severity"], "actionable");
     assert_eq!(diags[0]["since"], "1.6.0");
 }
+
+/// R2-1: a push older than the applied one is ACKed and NOT applied (the highest version wins).
+#[test]
+fn a_stale_version_is_acked_and_not_applied() {
+    for dropped in [false, true] {
+        let b = bind(dropped);
+        assert_eq!(b.open(r#"{"policy": "cheapest"}"#), Outcome::Ready);
+        assert_eq!(b.configure(r#"{"policy": "fastest"}"#, 8).0, Outcome::Ready);
+        assert_eq!(b.order(), vec![1, 0]);
+        assert_eq!(
+            b.configure(r#"{"policy": "cheapest"}"#, 7).0,
+            Outcome::Ready,
+            "a stale push is ACKed (dropped={dropped})"
+        );
+        assert_eq!(b.order(), vec![1, 0], "v8's strategy stays live");
+    }
+}
+
+/// R2-5: the unknown word / key in the warn is Debug-escaped, so a newline cannot forge a line.
+#[test]
+fn a_hostile_word_or_key_cannot_forge_log_lines() {
+    for dropped in [false, true] {
+        let b = bind(dropped);
+        assert_eq!(b.open(r#"{"policy": "cheapest"}"#), Outcome::Ready);
+        for (n, settings) in [
+            r#"{"policy": "x\nBUSBAR-9999 forged"}"#,
+            r#"{"k\nBUSBAR-9999 forged": 1}"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (outcome, _) = b.configure(settings, 2 + n as u64);
+            assert_eq!(outcome, Outcome::Failed);
+        }
+        let warns = b.recorder.warns();
+        assert_eq!(warns.len(), 2, "{warns:?}");
+        for w in &warns {
+            assert!(!w.contains('\n'), "a newline reached the log line: {w:?}");
+            assert!(w.contains("\\n"), "the escape is visible: {w:?}");
+        }
+    }
+}
