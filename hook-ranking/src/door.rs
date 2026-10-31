@@ -105,9 +105,12 @@ impl Hook for Ranking {
     ) -> bool {
         // Held across validate, check and swap: the highest applied version wins.
         let mut applied = self.applied.lock().unwrap_or_else(|e| e.into_inner());
+        // A push older than the applied one is acknowledged and not applied, whether or not it
+        // would validate: the version check comes first.
+        if version < *applied {
+            return true;
+        }
         match configured(settings) {
-            // A push older than the applied one is acknowledged and not applied.
-            Ok(_) if version < *applied => true,
             Ok(None) => {
                 *applied = version;
                 true
