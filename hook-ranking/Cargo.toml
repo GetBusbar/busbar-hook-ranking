@@ -1,17 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
 [package]
-name = "busbar-hooks-ranking"
-version = "1.5.0"
-publish = false            # internal workspace crate; never goes to crates.io
-edition = "2021"
-rust-version = "1.97"
-description = "The built-in ranking hooks for busbar: cheapest / fastest / least_busy / usage order-gates over the routing-policy contract."
-license = "Apache-2.0"
+name = "busbar-hook-ranking"
+version = "1.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The ranking hook for busbar: cheapest / fastest / least_busy / usage order-gates over the hook kind's decide view."
 
+[lib]
+# rlib: the LINKED door, which a busbar build names as a compiled-in row (`linked::door`, the root's
+# `hooks-ranking` row on the hook axis). The dropped-in door is the sibling
+# `busbar-hook-ranking-plugin` cdylib, which exports this same door as its one symbol; this crate
+# exports none.
+crate-type = ["rlib"]
+
+# DEPENDENCY POLICY. A plugin's busbar closure is busbar-contract and nothing else; third-party crates
+# come from the workspace table (`{ workspace = true }`), which is busbar's dependency policy. No
+# plugin opens its own socket, dials, binds or does TLS: a connection is a declared need the kernel
+# serves through the connector.
 [dependencies]
-busbar-api = { path = "../api" }
-async-trait = "0.1"
+busbar-contract = { workspace = true }
+# The settings document `open` reads (already in the contract's closure). `float_roundtrip`: the
+# host restores a quarantined instance only if re-pushing its checkpoint reproduces the checkpoint
+# byte for byte, so parsing must invert the shortest float text serde_json writes (the default
+# parser can be off by one ULP, e.g. `1e-30`). Feature unification enables it for the SDK's parse.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+# The plugin's log: `tracing` events are captured by the SDK into the plugin's own log file (a
+# configure NACK's reason).
+tracing = { workspace = true }
 
-[dev-dependencies]
-# The native policies are sync; the async-trait wrapper still makes `decide` async, so the tests
-# need a (current-thread) runtime to drive it.
-tokio = { version = "1", features = ["rt", "macros"] }
+[lints]
+workspace = true
