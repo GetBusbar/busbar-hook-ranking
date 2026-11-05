@@ -36,7 +36,18 @@ fn cand_rate(
         available_concurrency: conc,
         budget_remaining: budget,
         rate_headroom: rate,
-        signals: Default::default(),
+        signals: {
+            let mut signals = busbar_contract::SignalBag::new();
+            route_cost::append(
+                &mut signals,
+                [route_cost::Term {
+                    class: "work",
+                    price_per_unit: cost,
+                    expected_units: 1.0,
+                }],
+            );
+            signals
+        },
     }
 }
 
@@ -119,7 +130,7 @@ fn rank_knows_its_words_and_no_others() {
     assert!(rank("nonexistent", &one).is_none());
 }
 
-/// The claimed words are exactly the four 1.5.5 strategy spellings.
+/// The claimed words are exactly the four supported strategies.
 #[test]
 fn the_claimed_words_are_the_four_strategies() {
     assert_eq!(WORDS, ["cheapest", "fastest", "least_busy", "usage"]);
@@ -217,7 +228,7 @@ fn fastest_orders_by_latency_demoting_unknown() {
 }
 
 /// A deterministic stream of ordered keys (no randomness crate): `n` draws over finite values,
-/// both zeros and both infinities. The parity test adds absent keys separately.
+/// both zeros and both infinities. The ordering test adds absent keys separately.
 fn keys(seed: u64, n: usize) -> Vec<Option<f64>> {
     let mut x = seed;
     (0..n)
@@ -237,8 +248,8 @@ fn keys(seed: u64, n: usize) -> Vec<Option<f64>> {
         .collect()
 }
 
-/// 1.5.5's comparator over `keys`, ascending (v1.5.5 `crates/hooks-ranking/src/lib.rs:76-85`).
-fn order_1_5_5(keys: &[Option<f64>], descending: bool) -> Vec<usize> {
+/// Numeric ordering with stable index ties; the input contains no NaN.
+fn numeric_order(keys: &[Option<f64>], descending: bool) -> Vec<usize> {
     let mut keyed: Vec<(usize, Option<f64>)> = keys.iter().copied().enumerate().collect();
     keyed.sort_by(|(ia, ka), (ib, kb)| match (ka, kb) {
         (Some(a), Some(b)) => if descending {
@@ -255,11 +266,10 @@ fn order_1_5_5(keys: &[Option<f64>], descending: bool) -> Vec<usize> {
     keyed.into_iter().map(|(i, _)| i).collect()
 }
 
-/// PARITY ON EVERY REACHABLE INPUT: over pools with no `NaN` (finite keys, `-0.0` and `+0.0`, both
-/// infinities, absent keys), the ranking is 1.5.5's comparator's order, byte for byte, ascending
-/// and descending, at every size across the sort's small-slice boundary.
+/// Ascending and descending signal rankings use numeric order and index ties across the
+/// sort's small-slice boundary, including zeros, infinities and absent signals.
 #[test]
-fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
+fn a_pool_without_nan_uses_numeric_order_and_index_ties() {
     for seed in 1..=64_u64 {
         for n in [1, 2, 3, 7, 19, 20, 21, 33, 64, 100] {
             let ks: Vec<Option<f64>> = keys(seed * 977 + n as u64, n)
@@ -276,16 +286,16 @@ fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
             if ks.iter().all(Option::is_none) {
                 continue;
             }
-            let mut cost: Vec<_> = ks
+            let mut latency: Vec<_> = ks
                 .iter()
                 .enumerate()
-                .map(|(i, k)| cand(i, *k, None, 1, None))
+                .map(|(i, k)| cand(i, None, *k, 1, None))
                 .collect();
 
-            cost.reverse();
+            latency.reverse();
             assert_eq!(
-                rank("cheapest", &cost).unwrap(),
-                Verdict::Prefer(order_1_5_5(&ks, false)),
+                rank("fastest", &latency).unwrap(),
+                Verdict::Prefer(numeric_order(&ks, false)),
                 "ascending, seed {seed}, n {n}: {ks:?}"
             );
             let mut rate: Vec<_> = ks
@@ -296,7 +306,7 @@ fn a_pool_without_nan_ranks_as_1_5_5_ranked_it() {
             rate.reverse();
             assert_eq!(
                 rank("usage", &rate).unwrap(),
-                Verdict::Prefer(order_1_5_5(&ks, true)),
+                Verdict::Prefer(numeric_order(&ks, true)),
                 "descending, seed {seed}, n {n}: {ks:?}"
             );
         }
@@ -310,10 +320,10 @@ fn shuffled(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<Option<f64>> {
     (0..n).map(|i| key((i * 7) % n)).collect()
 }
 
-fn pool_cost(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<DecodedCandidate<'static>> {
+fn pool_latency(n: usize, key: impl Fn(usize) -> Option<f64>) -> Vec<DecodedCandidate<'static>> {
     let ks = shuffled(n, &key);
     (0..n)
-        .map(|i| cand((i * 7) % n, ks[i], None, 1, None))
+        .map(|i| cand((i * 7) % n, None, ks[i], 1, None))
         .collect()
 }
 
@@ -353,7 +363,7 @@ fn a_nan_key_ranks_after_the_numbers_and_before_the_absent() {
         .chain(tail.iter().copied())
         .collect();
     assert_eq!(
-        rank("cheapest", &pool_cost(N, key)).unwrap(),
+        rank("fastest", &pool_latency(N, key)).unwrap(),
         Verdict::Prefer(want),
         "ascending"
     );
@@ -371,29 +381,25 @@ fn a_nan_key_ranks_after_the_numbers_and_before_the_absent() {
     );
 }
 
-/// A pool whose only keys are `NaN` states the signal: it ranks by idx (1.5.5's answer), it does
-/// not Abstain; and a `NaN` ranks ahead of an absent key.
+/// A NaN latency is kept in a deterministic tier after numbers and before absent signals.
 #[test]
 fn an_all_nan_pool_ranks_by_index_and_ahead_of_absent() {
     let cands = [
         cand(1, Some(f64::NAN), Some(f64::NAN), 1, None),
         cand(0, Some(f64::NAN), Some(f64::NAN), 1, None),
     ];
-    assert_eq!(
-        rank("cheapest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1])
-    );
+    assert_eq!(rank("cheapest", &cands).unwrap(), Verdict::Abstain);
     assert_eq!(
         rank("fastest", &cands).unwrap(),
         Verdict::Prefer(vec![0, 1])
     );
     let mixed = [
         cand(0, None, None, 1, None),
-        cand(1, Some(f64::NAN), None, 1, None),
-        cand(2, Some(5.0), None, 1, None),
+        cand(1, None, Some(f64::NAN), 1, None),
+        cand(2, None, Some(5.0), 1, None),
     ];
     assert_eq!(
-        rank("cheapest", &mixed).unwrap(),
+        rank("fastest", &mixed).unwrap(),
         Verdict::Prefer(vec![2, 1, 0])
     );
 }
@@ -439,37 +445,48 @@ fn ties_and_the_absent_group_break_by_idx_whatever_the_input_order() {
     );
 }
 
-/// AN INFINITE SIGNAL IS ORDERED AS 1.5.5 ORDERED IT. 1.5.5's ranking compared every present key
-/// with `partial_cmp`, and an infinity is orderable: `cheapest` put an infinite cost behind every
-/// finite one and ahead of a member with no cost, and preferred it over an absent signal rather than
-/// abstaining. A port keeps 1.5.5's behaviour (THE DESIGN §2, "A port keeps 1.5.5's surface"); only
-/// a NaN, which has no numeric order, ranks after numbers and before absent signals.
+/// Infinite latency remains orderable; invalid recipe prices are unknown, never cheap.
 #[test]
-fn an_infinite_signal_ranks_as_1_5_5_ranked_it() {
+fn infinite_latency_is_ordered_and_nonfinite_costs_are_unknown() {
+    for invalid in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN, -1.0] {
+        let cands = [
+            cand(0, Some(invalid), None, 1, None),
+            cand(1, Some(2.0), None, 1, None),
+            cand(2, None, None, 1, None),
+        ];
+        assert_eq!(
+            rank("cheapest", &cands).unwrap(),
+            Verdict::Prefer(vec![1, 0, 2])
+        );
+        assert_eq!(rank("cheapest", &cands[..1]).unwrap(), Verdict::Abstain);
+    }
     let cands = [
-        cand(0, Some(f64::INFINITY), None, 1, None),
-        cand(1, None, None, 1, None),
-    ];
-    assert_eq!(
-        rank("cheapest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1]),
-        "an infinite cost is a cost, not an absent one"
-    );
-    let cands = [
-        cand(0, Some(f64::INFINITY), None, 1, None),
-        cand(1, Some(2.0), None, 1, None),
+        cand(0, None, Some(f64::INFINITY), 1, None),
+        cand(1, None, Some(2.0), 1, None),
         cand(2, None, None, 1, None),
     ];
     assert_eq!(
-        rank("cheapest", &cands).unwrap(),
+        rank("fastest", &cands).unwrap(),
         Verdict::Prefer(vec![1, 0, 2])
     );
-    let cands = [
-        cand(0, None, Some(f64::INFINITY), 1, None),
-        cand(1, None, None, 1, None),
+}
+
+#[test]
+fn missing_recipes_never_use_scalar_costs_or_ignore_overrides() {
+    let mut cands = [
+        cand(0, Some(1.0), None, 1, None),
+        cand(1, Some(9.0), None, 1, None),
     ];
+    for candidate in &mut cands {
+        candidate.signals = busbar_contract::SignalBag::new();
+    }
+    assert_eq!(rank("cheapest", &cands), Some(Verdict::Abstain));
+    let overrides = BTreeMap::from([("work".to_owned(), 0.0)]);
     assert_eq!(
-        rank("fastest", &cands).unwrap(),
-        Verdict::Prefer(vec![0, 1])
+        rank_with_expected_units("cheapest", &cands, &overrides),
+        Some(Verdict::Abstain)
     );
+    // A known recipe stays ahead of a lower scalar on a candidate missing its recipe.
+    cands[1] = cand(1, Some(9.0), None, 1, None);
+    assert_eq!(rank("cheapest", &cands), Some(Verdict::Prefer(vec![1, 0])));
 }

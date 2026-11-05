@@ -52,9 +52,10 @@ per unit times its selected expected quantity. Configured floating prices retain
 precision for routing; exact integer billing is unchanged. Duplicate class terms remain separate and each uses
 the override. Empty, malformed, overflowed or unknown-price estimates sort last; an override of
 zero does not turn an unknown price into zero. An explicitly known zero price remains valid.
-If any candidate has a generic projection, a missing projection on another candidate is unknown.
-Only a host with no generic projection retains the legacy `cost_per_mtok` order, without rescaling
-that field. These estimates do not alter billing or the rate card.
+A missing projection is unknown, even when every candidate lacks one and carries a
+`cost_per_mtok` scalar. Only the current recipe supplies routing cost; missing data never switches
+to a different cost model or bypasses expected-unit overrides. These estimates do not alter billing
+or the rate card.
 
 Ties use ascending candidate `idx`, independent of input order. A `NaN` signal sorts after
 numbers and before absent signals. Missing signals stay reachable at the end; `fastest` does

@@ -224,7 +224,19 @@ impl Bound {
             available_concurrency: 1,
             budget_remaining: None,
             rate_headroom: None,
-            signals: SignalBag::new(),
+            signals: {
+                use busbar_contract::signal::route_cost::{append, Term};
+                let mut signals = SignalBag::new();
+                append(
+                    &mut signals,
+                    [Term {
+                        class: "work",
+                        price_per_unit: Some(cost),
+                        expected_units: 1.0,
+                    }],
+                );
+                signals
+            },
         };
         let candidates = [candidate(0, 1.0, 900.0), candidate(1, 9.0, 10.0)];
         let ctx = RoutingContext {

@@ -71,6 +71,20 @@ mod allocations {
 #[global_allocator]
 static ALLOCATOR: allocations::Counting = allocations::Counting;
 
+fn cost_signal(price: Option<f64>) -> busbar_contract::SignalBag {
+    use busbar_contract::signal::route_cost::{append, Term};
+    let mut signals = busbar_contract::SignalBag::new();
+    append(
+        &mut signals,
+        [Term {
+            class: "work",
+            price_per_unit: price,
+            expected_units: 1.0,
+        }],
+    );
+    signals
+}
+
 fn cand_tied(idx: usize, rate: Option<f64>) -> DecodedCandidate<'static> {
     DecodedCandidate {
         idx,
@@ -87,7 +101,7 @@ fn cand_tied(idx: usize, rate: Option<f64>) -> DecodedCandidate<'static> {
         available_concurrency: 4,
         budget_remaining: None,
         rate_headroom: rate,
-        signals: Default::default(),
+        signals: cost_signal(Some(7.0)),
     }
 }
 
@@ -123,16 +137,19 @@ fn partial_tie_group_is_ordered_by_idx_within_the_group() {
         DecodedCandidate {
             idx: 5,
             cost_per_mtok: Some(3.0),
+            signals: cost_signal(Some(3.0)),
             ..cand_tied(5, None)
         },
         DecodedCandidate {
             idx: 9,
             cost_per_mtok: Some(1.0),
+            signals: cost_signal(Some(1.0)),
             ..cand_tied(9, None)
         },
         DecodedCandidate {
             idx: 2,
             cost_per_mtok: Some(3.0),
+            signals: cost_signal(Some(3.0)),
             ..cand_tied(2, None)
         },
     ];
@@ -146,11 +163,13 @@ fn all_absent_signals_abstain_without_allocating() {
     let cands = [
         DecodedCandidate {
             cost_per_mtok: None,
+            signals: cost_signal(None),
             latency_ms: None,
             ..cand_tied(9, None)
         },
         DecodedCandidate {
             cost_per_mtok: None,
+            signals: cost_signal(None),
             latency_ms: None,
             ..cand_tied(2, None)
         },

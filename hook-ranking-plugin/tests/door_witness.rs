@@ -183,6 +183,20 @@ const SHAPES: &[&[Row]] = &[
     &[],
 ];
 
+fn cost_signal(price: Option<f64>) -> SignalBag {
+    use busbar_contract::signal::route_cost::{append, Term};
+    let mut signals = SignalBag::new();
+    append(
+        &mut signals,
+        [Term {
+            class: "work",
+            price_per_unit: price,
+            expected_units: 1.0,
+        }],
+    );
+    signals
+}
+
 fn candidates(rows: &[Row]) -> Vec<Candidate<'static>> {
     rows.iter()
         .map(|&(idx, cost, lat, conc, rate)| Candidate {
@@ -198,7 +212,7 @@ fn candidates(rows: &[Row]) -> Vec<Candidate<'static>> {
             available_concurrency: conc,
             budget_remaining: None,
             rate_headroom: rate,
-            signals: SignalBag::new(),
+            signals: cost_signal(cost),
         })
         .collect()
 }
@@ -364,7 +378,7 @@ fn generic_costs_preserve_the_configured_float_order_both_ways() {
         assert_eq!(
             decide_with_signals(&p, &rows, &[&a, &b]),
             (Outcome::Ready, VERB_PREFER, vec![1, 0]),
-            "the generic recipe must keep the legacy float distinction"
+            "the recipe must preserve distinct configured routing prices"
         );
         assert_eq!(
             configure(&p, r#"{"expected_units":{"input":1,"output":0}}"#, 2).0,
@@ -374,6 +388,27 @@ fn generic_costs_preserve_the_configured_float_order_both_ways() {
             decide_with_signals(&p, &rows, &[&a, &b]),
             (Outcome::Ready, VERB_PREFER, vec![0, 1]),
             "overrides still evaluate the generic classes"
+        );
+    }
+}
+
+#[test]
+fn missing_recipes_never_use_scalar_costs_both_ways() {
+    for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
+        let d = Dispatcher::new(DispatchConfig::default());
+        let p = load(&d);
+        assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
+        assert_eq!(
+            decide_with_signals(&p, COST_ROWS, &[&[], &[]]),
+            (Outcome::Ready, VERB_ABSTAIN, vec![])
+        );
+        assert_eq!(
+            configure(&p, r#"{"expected_units":{"work":0}}"#, 2).0,
+            Outcome::Ready
+        );
+        assert_eq!(
+            decide_with_signals(&p, COST_ROWS, &[&[], &[]]),
+            (Outcome::Ready, VERB_ABSTAIN, vec![])
         );
     }
 }
@@ -624,7 +659,7 @@ fn expected_order(word: &str, rows: &[Row]) -> Option<Vec<usize>> {
             available_concurrency: conc,
             budget_remaining: None,
             rate_headroom: rate,
-            signals: SignalBag::new(),
+            signals: cost_signal(cost),
         })
         .collect();
     match busbar_hook_ranking::rank(word, &decoded) {

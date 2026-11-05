@@ -14,9 +14,10 @@
 //!
 //! A `NaN` key is a PRESENT key that has no order against a number: it sorts after every number
 //! and before every absent key, `NaN`s among themselves by `idx`. That keeps the comparator a total
-//! order (the standard sort may panic on one that is not) and keeps 1.5.5's outcomes for a pool of
-//! `NaN`s (`Prefer` in idx order, not `Abstain`). No `NaN` reaches a ranking in practice (the
-//! validator refuses a rate that is not finite and non-negative; a latency EWMA drops every sample
+//! order (the standard sort may panic on one that is not). An all-`NaN` signal pool therefore
+//! ranks in idx order. Invalid recipe prices, including `NaN`, are instead unknown costs.
+//! No `NaN` reaches a ranking in practice (the validator refuses a rate that is not finite and
+//! non-negative; a latency EWMA drops every sample
 //! that is not finite and positive; a rate headroom is clamped into `[0, 1]`; concurrency is an
 //! integer); this keeps a stray one harmless.
 
@@ -29,7 +30,6 @@ use std::collections::BTreeMap;
 
 use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
 use busbar_contract::signal::route_cost;
-use busbar_contract::Signal;
 
 const POLICY_NAME_CHEAPEST: &str = "cheapest";
 const POLICY_NAME_FASTEST: &str = "fastest";
@@ -77,11 +77,10 @@ fn rank_by<K: PartialOrd + Copy>(
 
 /// Estimated routing cost from the plane's recipe. Unknown or malformed data never becomes
 /// a zero price, including when an override selects zero units. This is a routing estimate only;
-/// it never changes the card or the legacy per-million projection.
+/// it never changes the card or billing.
 fn estimated_cost(
     candidate: &DecodedCandidate<'_>,
     expected_units: &BTreeMap<String, f64>,
-    generic: bool,
 ) -> Option<f64> {
     let mut total = 0.0;
     let mut saw_term = false;
@@ -104,7 +103,6 @@ fn estimated_cost(
         }
     });
     match decoded {
-        Ok(false) if !generic => candidate.cost_per_mtok,
         Ok(true) if saw_term && known => Some(total),
         _ => None,
     }
@@ -117,14 +115,9 @@ pub(crate) fn rank_with_expected_units(
     expected_units: &BTreeMap<String, f64>,
 ) -> Option<Verdict> {
     Some(match name {
-        POLICY_NAME_CHEAPEST => {
-            let generic = candidates
-                .iter()
-                .any(|candidate| candidate.signals.get(Signal::CandidateRouteCost).is_some());
-            rank_by(candidates, false, |candidate| {
-                estimated_cost(candidate, expected_units, generic)
-            })
-        }
+        POLICY_NAME_CHEAPEST => rank_by(candidates, false, |candidate| {
+            estimated_cost(candidate, expected_units)
+        }),
         POLICY_NAME_FASTEST => rank_by(candidates, false, |c| c.latency_ms),
         POLICY_NAME_LEAST_BUSY => rank_by(candidates, true, |c| Some(c.available_concurrency)),
         POLICY_NAME_USAGE => rank_by(candidates, true, |c| c.rate_headroom),
@@ -136,8 +129,8 @@ pub(crate) fn rank_with_expected_units(
 /// not claim (the door answers such a call `Abstain`, no opinion, the default SWRR).
 ///
 /// * `cheapest`: lowest estimated total cost from the plane's declared recipe and card-priced
-///   candidate signals. Empty, unknown or malformed estimates are demoted. A legacy host with no
-///   generic projection retains the original `cost_per_mtok` ordering without rescaling it.
+///   candidate signals. Missing, empty, unknown or malformed estimates are demoted.
+///   The scalar `cost_per_mtok` field is never used as a substitute for the recipe.
 ///   This function uses each term's plane-declared expected units; the opened hook's
 ///   `expected_units` overrides apply only through the door's `decide`.
 /// * `fastest`: lowest measured rolling-EWMA `latency_ms`; a member with no sample is demoted.
