@@ -83,6 +83,9 @@ busbar_contract::statement_extensions!(
 
 /// The Statement: name, version, the hook tail, the alias and the claimed [`WORDS`].
 pub const STATEMENT: Statement = Statement {
+    settings_schema: busbar_contract::abi::mechanism::call::Blob::json(include_bytes!(
+        "../settings.schema.json"
+    )),
     extensions: EXTENSIONS,
     rewrites: REWRITES.as_ptr(),
     rewrites_len: REWRITES.len(),
@@ -310,3 +313,7 @@ busbar_contract::hook_door! {
 #[cfg(test)]
 #[path = "tests/door_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/settings_schema_tests.rs"]
+mod settings_schema_tests;

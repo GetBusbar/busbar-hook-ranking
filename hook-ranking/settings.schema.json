@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "policy"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "policy": {
+      "type": "string",
+      "enum": [
+        "cheapest",
+        "fastest",
+        "least_busy",
+        "usage"
+      ]
+    },
+    "expected_units": {
+      "type": "object",
+      "default": {},
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1.7976931348623157e+308
+      },
+      "description": "Per-class finite, non-negative expected-unit overrides; an empty map uses plane defaults."
+    }
+  }
+}
