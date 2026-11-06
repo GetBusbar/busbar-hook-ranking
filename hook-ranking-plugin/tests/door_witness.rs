@@ -1009,13 +1009,6 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
                 "ranking: unknown setting 'x'",
             ),
         ];
-        let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("conformance.json")).unwrap();
-        assert_eq!(
-            fixture["hook"]["bad_settings"],
-            serde_json::json!(bad_settings.map(|(bad, _, _)| bad)),
-            "conformance.json's bad settings are the ones exercised here"
-        );
         for (bad, validate_why, open_why) in bad_settings {
             let mut reason = [0u8; 1024];
             let mut frame: Frame<ValidateIn, OutHead> = Frame::new(

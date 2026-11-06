@@ -407,3 +407,48 @@ fn a_push_at_the_applied_version_is_applied() {
     fresh.configure(&map(r#"{"policy":"fastest"}"#), 0).unwrap();
     assert_eq!(fresh.word(), "fastest");
 }
+
+#[test]
+fn open_refuses_a_profile_no_configure_could_ever_checkpoint() {
+    // A profile whose complete checkpoint exceeds the SDK bound would open, then NACK every later
+    // configure (even a policy-only or stale push). Open refuses it in words instead.
+    let class = "x".repeat(busbar_contract::abi::sdk::hook::configure_checkpoint::MAX_BYTES + 1);
+    let settings = serde_json::json!({ "policy": "fastest", "expected_units": { class: 1.0 } });
+    let Err(why) = Open::open(&settings.to_string()) else {
+        panic!("an uncheckpointable profile should have been refused");
+    };
+    assert!(why.starts_with("ranking: "), "{why}");
+    assert!(
+        why.contains("invalid complete hook configuration checkpoint"),
+        "{why}"
+    );
+}
+
+#[test]
+fn an_opened_profile_survives_a_later_policy_only_push() {
+    let hook = Open::open(r#"{"policy":"cheapest","expected_units":{"work":0}}"#).unwrap();
+    hook.configure(&map(r#"{"policy":"fastest"}"#), 1)
+        .expect("a policy-only push keeps the opened profile");
+}
+
+#[test]
+fn every_word_is_marked_once_in_order_as_a_hook_word() {
+    // `marks()` is normally evaluated only at compile time for `MARKS`; run it here so its loop is
+    // checked directly. The four words have distinct lengths, so the length sequence pins both the
+    // words and their order (a skipped, repeated or shifted word changes it).
+    let runtime = marks();
+    assert_eq!(runtime.len(), WORDS.len());
+    assert_eq!(MARKS.len(), WORDS.len());
+    for ((mark, compiled), w) in runtime.iter().zip(MARKS).zip(WORDS) {
+        assert_eq!(mark.class, MARK_WORD_HOOK, "{w}");
+        assert_eq!(mark._reserved, 0, "{w}");
+        assert_eq!(mark.word.len, w.len(), "{w}");
+        assert_eq!(compiled.class, mark.class, "{w}");
+        assert_eq!(compiled.word.len, mark.word.len, "{w}");
+    }
+    let one = word("cheapest");
+    assert_eq!(
+        (one.class, one._reserved, one.word.len),
+        (MARK_WORD_HOOK, 0, 8)
+    );
+}

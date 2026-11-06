@@ -6,7 +6,8 @@
 //!
 //! * `open` reads a `policy` from [`crate::WORDS`] and an optional `expected_units` map keyed by
 //!   opaque billing class. Other keys, a non-object document, a non-string policy or an invalid
-//!   `expected_units` map refuse in words, as does an unknown word. An empty document is `{}`, so
+//!   `expected_units` map (including one too large for the complete configure checkpoint) refuse
+//!   in words, as does an unknown word. An empty document is `{}`, so
 //!   it refuses as a missing policy.
 //! * `configure` validates the pushed map in `open`'s grammar (with `policy` optional) before
 //!   comparing versions: a map this hook refuses is a NACK, even when stale, whose reason is
@@ -294,6 +295,10 @@ impl HookOpen for Open {
         let units = expected_units(obj)
             .map_err(|why| format!("{ALIAS}: {why}"))?
             .unwrap_or_default();
+        // Every later configure answers with the complete checkpoint, so a profile that cannot be
+        // checkpointed with the opened policy would open and then NACK every push that keeps it.
+        // Refuse it here, in configure's words.
+        checkpoint(1, 0, WORDS[index], &units).map_err(|why| format!("{ALIAS}: {why}"))?;
         Ok(Box::new(Ranking(
             AtomicUsize::new(index),
             Mutex::new(Configuration {

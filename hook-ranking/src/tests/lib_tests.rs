@@ -490,3 +490,28 @@ fn missing_recipes_never_use_scalar_costs_or_ignore_overrides() {
     cands[1] = cand(1, Some(9.0), None, 1, None);
     assert_eq!(rank("cheapest", &cands), Some(Verdict::Prefer(vec![1, 0])));
 }
+
+#[test]
+fn rank_by_evaluates_each_candidate_key_exactly_once() {
+    // Only the last candidate carries a key: the all-absent check must not decode the leading
+    // keys a second time when ranking.
+    let pool: Vec<_> = (0..5)
+        .map(|i| cand(i, None, (i == 4).then_some(1.0), 0, None))
+        .collect();
+    let calls = std::cell::Cell::new(0_usize);
+    let verdict = rank_by(&pool, false, |c| {
+        calls.set(calls.get() + 1);
+        c.latency_ms
+    });
+    assert_eq!(verdict, Verdict::Prefer(vec![4, 0, 1, 2, 3]));
+    assert_eq!(calls.get(), pool.len());
+
+    let calls = std::cell::Cell::new(0_usize);
+    let none: Vec<_> = (0..3).map(|i| cand(i, None, None, 0, None)).collect();
+    let verdict = rank_by(&none, false, |c| {
+        calls.set(calls.get() + 1);
+        c.latency_ms
+    });
+    assert_eq!(verdict, Verdict::Abstain);
+    assert_eq!(calls.get(), none.len());
+}

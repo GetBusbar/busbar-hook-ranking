@@ -29,7 +29,8 @@ Configured under the `ranking` module name. The settings document requires `poli
 | `expected_units` | object, optional | Maps non-empty opaque billable class names to finite non-negative expected quantities. Each named value replaces that class's plane-declared default for `cheapest`; omitted classes keep their defaults. |
 
 `open` refuses, in words, a document that is not a JSON object, a missing or non-string
-`policy`, a word that is not one of the four, an invalid `expected_units` map, and any other key. An empty document is read as
+`policy`, a word that is not one of the four, an invalid `expected_units` map (including one too large for
+the complete configuration checkpoint every later `configure` returns), and any other key. An empty document is read as
 `{}` and refused as a missing `policy`.
 
 `configure` (a settings push) validates the settings before comparing versions. A valid version
