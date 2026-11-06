@@ -66,10 +66,11 @@ fn rank_by<K: PartialOrd + Copy>(
     descending: bool,
     key: impl Fn(&DecodedCandidate<'_>) -> Option<K>,
 ) -> Verdict {
-    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
-    if keyed.iter().all(|(_, k)| k.is_none()) {
+    // Keep an all-absent pool allocation-free; only materialize keys when ranking.
+    if candidates.iter().all(|candidate| key(candidate).is_none()) {
         return Verdict::Abstain;
     }
+    let mut keyed: Vec<(usize, Option<K>)> = candidates.iter().map(|c| (c.idx, key(c))).collect();
 
     keyed.sort_by(|a, b| key_order(a, b, descending));
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
