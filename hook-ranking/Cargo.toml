@@ -35,3 +35,6 @@ workspace = true
 
 [dev-dependencies]
 jsonschema = { workspace = true }
+busbar-contract = { workspace = true, features = ["test-seal"] }
+
+busbar-plugin-loader = { workspace = true, features = ["test-support"] }

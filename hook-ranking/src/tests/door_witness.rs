@@ -21,6 +21,7 @@
 use std::sync::Arc;
 use std::task::Poll;
 
+use crate::WORDS;
 use busbar_contract::abi::hook::{
     slot, CandidateDynamic, ConfigureIn, ConfigureOut, DecideOut, SignalEntry,
     SignalValue as WireSignalValue, CANDIDATE_HAS_LATENCY_MS, CANDIDATE_HAS_RATE_HEADROOM,
@@ -37,7 +38,6 @@ use busbar_contract::abi::sdk::hook::{
 };
 use busbar_contract::hooks::{Candidate, RoutingContext, RoutingRequest};
 use busbar_contract::SignalBag;
-use busbar_hook_ranking::WORDS;
 use busbar_plugin_loader::dispatch::kinds::hook::Hook;
 use busbar_plugin_loader::dispatch::{
     in_head, load_dropped, load_linked, out_head, rendering_of, Bind, ConnTable, DispatchConfig,
@@ -52,19 +52,18 @@ fn checked_call<
     slot: u32,
     frame: &mut Frame<I, O>,
 ) -> busbar_plugin_loader::dispatch::Called {
-    use std::sync::atomic::Ordering;
-    let entered = plugin.inner.crossings.load(Ordering::Relaxed);
-    let resumed = plugin.inner.resumes.load(Ordering::Relaxed);
+    let entered = plugin.test_invocations().0;
+    let resumed = plugin.test_invocations().1;
     let called = plugin.call(slot, frame);
     let host_refusal = (slot == life::OPEN || slot == slot::DECIDE || slot == slot::TRANSFORM)
         && matches!(called.outcome, Outcome::Refused | Outcome::Fault);
     assert_eq!(
-        plugin.inner.crossings.load(Ordering::Relaxed) - entered,
+        plugin.test_invocations().0 - entered,
         u64::from(!host_refusal),
         "one physical plugin entry for ranking slot {slot}"
     );
     assert_eq!(
-        plugin.inner.resumes.load(Ordering::Relaxed) - resumed,
+        plugin.test_invocations().1 - resumed,
         0,
         "ranking is pure compute and must not resume"
     );
@@ -89,7 +88,7 @@ fn linked_row(door: DoorFn, d: &Dispatcher) -> Plugin<Hook> {
 
 /// The linked door, bound on `d`.
 fn linked(d: &Dispatcher) -> Plugin<Hook> {
-    linked_row(busbar_hook_ranking::linked::door, d)
+    linked_row(crate::linked::door, d)
 }
 
 /// This crate's dropped-in image, the freshly built cdylib (`busbar_hook_ranking_plugin`) named by
@@ -107,8 +106,7 @@ fn dropped(d: &Dispatcher) -> Plugin<Hook> {
         );
         path
     };
-    let stated =
-        rendering_of(busbar_hook_ranking::linked::door).expect("the door renders its Statement");
+    let stated = rendering_of(crate::linked::door).expect("the door renders its Statement");
     load_dropped::<Hook>(&path, &stated, bind(d)).expect("the dropped door loads")
 }
 
@@ -371,7 +369,10 @@ fn generic_costs_preserve_the_configured_float_order_both_ways() {
         (1, Some((0.15 + 0.15) / 2.0), None, 1, None),
     ];
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
         assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
         assert_eq!(decide(&p, &rows), (Outcome::Ready, VERB_PREFER, vec![1, 0]));
@@ -395,7 +396,10 @@ fn generic_costs_preserve_the_configured_float_order_both_ways() {
 #[test]
 fn missing_recipes_never_use_scalar_costs_both_ways() {
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
         assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
         assert_eq!(
@@ -424,7 +428,10 @@ fn cheapest_uses_the_plane_recipe_instead_of_the_legacy_scalar_both_ways() {
         (1, Some(9.0), Some(900.0), 2, None),
     ];
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
         assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
 
@@ -457,7 +464,10 @@ fn per_hook_expected_units_override_and_configure_are_atomic_both_ways() {
     let a = recipe(&[("work", Some(2), 1.0), ("span", Some(10), 1.0)]);
     let b = recipe(&[("work", Some(6), 1.0), ("span", Some(1), 1.0)]);
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
         let other = load(&d);
         assert_eq!(
@@ -557,7 +567,10 @@ fn unknown_empty_malformed_and_overflow_costs_never_become_free_both_ways() {
         unknown_tag,
     ] {
         for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-            let d = Dispatcher::new(DispatchConfig::default());
+            let d = Dispatcher::new(
+                DispatchConfig::default(),
+                busbar_contract::services::test_caller_binding(),
+            );
             let p = load(&d);
             assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
             assert_eq!(
@@ -578,7 +591,10 @@ fn known_zero_and_duplicate_recipe_terms_keep_their_meaning_both_ways() {
     let duplicate = recipe(&[("work", Some(2), 1.0), ("work", Some(3), 1.0)]);
     let nine = recipe(&[("other", Some(9), 1.0)]);
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
         assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
         assert_eq!(
@@ -620,7 +636,10 @@ fn known_zero_and_duplicate_recipe_terms_keep_their_meaning_both_ways() {
 /// THE SCRIPT over the door `load` binds, one line per answer: an open that names no strategy,
 /// then every strategy word opened and asked to rank every shape.
 fn script(load: impl Fn(&Dispatcher) -> Plugin<Hook>) -> Vec<String> {
-    let d = Dispatcher::new(DispatchConfig::default());
+    let d = Dispatcher::new(
+        DispatchConfig::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
     let mut lines = vec![format!(
         "open nope: {:?}",
         open(&load(&d), r#"{"policy": "nope"}"#)
@@ -662,7 +681,7 @@ fn expected_order(word: &str, rows: &[Row]) -> Option<Vec<usize>> {
             signals: cost_signal(cost),
         })
         .collect();
-    match busbar_hook_ranking::rank(word, &decoded) {
+    match crate::rank(word, &decoded) {
         Some(Verdict::Prefer(order)) => Some(order),
         None | Some(Verdict::Abstain) => None,
         Some(other) => panic!("rank answered {other:?}"),
@@ -728,7 +747,10 @@ fn every_strategy_has_its_expected_orders_through_both_doors() {
         ("usage", [&[1, 0, 2], &[], &[0, 1], &[0], &[]]),
     ];
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         for (word, orders) in EXPECTED {
             let p = load(&d);
             assert_eq!(
@@ -760,7 +782,11 @@ mod reversed {
     struct Reversed(Box<dyn HookImpl>);
 
     impl HookImpl for Reversed {
-        fn decide(&self, view: &Decoded<'_>, op: &Op<'_>) -> Poll<Verdict> {
+        fn decide(
+            &self,
+            view: &Decoded<'_>,
+            op: &Op<'_, busbar_contract::plugin::markers::HookKind>,
+        ) -> Poll<Verdict> {
             self.0.decide(view, op).map(|v| match v {
                 Verdict::Prefer(mut order) => {
                     order.reverse();
@@ -775,14 +801,13 @@ mod reversed {
 
     impl HookOpen for Open {
         fn open(settings: &str) -> Result<Box<dyn HookImpl>, String> {
-            busbar_hook_ranking::door::Open::open(settings)
-                .map(|h| Box::new(Reversed(h)) as Box<dyn HookImpl>)
+            crate::door::Open::open(settings).map(|h| Box::new(Reversed(h)) as Box<dyn HookImpl>)
         }
     }
 
     busbar_contract::hook_door! {
         open: Open,
-        statement: busbar_hook_ranking::door::STATEMENT,
+        statement: crate::door::STATEMENT,
     }
 }
 
@@ -805,7 +830,10 @@ fn red_a_door_that_ranks_the_other_way_answers_differently() {
 #[test]
 fn every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending() {
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         for word in WORDS {
             let p = load(&d);
             assert_eq!(
@@ -833,7 +861,7 @@ fn every_strategy_word_answers_decide_ready_on_the_first_poll_never_pending() {
 #[test]
 fn the_rendered_statement_claims_every_word_as_a_hook_mark() {
     use busbar_contract::abi::mechanism::door::MARK_WORD_HOOK;
-    let rendering = rendering_of(busbar_hook_ranking::linked::door).expect("the door renders");
+    let rendering = rendering_of(crate::linked::door).expect("the door renders");
     let mut want = Vec::new();
     want.extend_from_slice(&(WORDS.len() as u32).to_le_bytes());
     for w in WORDS {
@@ -884,7 +912,6 @@ fn ticketed_decide(
 ) -> (Outcome, u32, Vec<usize>) {
     use busbar_contract::abi::host::hook::Caps;
     use busbar_contract::abi::mechanism::call::DeadlineClass;
-    use std::sync::atomic::Ordering::SeqCst;
     use std::time::Duration;
     let view = DecideView::build(&request(), &candidates(rows), &ctx());
     let caps = Caps {
@@ -893,8 +920,8 @@ fn ticketed_decide(
     };
     let first = DecideFrame::new(Arc::clone(&view), caps);
     let ticket = d.mint(0).expect("an actual ranking ticket");
-    let entered = p.inner.crossings.load(SeqCst);
-    let resumed = p.inner.resumes.load(SeqCst);
+    let entered = p.test_invocations().0;
+    let resumed = p.test_invocations().1;
     let deadline = busbar_plugin_loader::dispatch::now_ns().saturating_add(10_000_000_000);
     let mut done = d
         .submit_watched(
@@ -940,8 +967,8 @@ fn ticketed_decide(
         }
     }
     d.recycle(ticket);
-    assert_eq!(p.inner.crossings.load(SeqCst) - entered, expected_entries);
-    assert_eq!(p.inner.resumes.load(SeqCst) - resumed, 0);
+    assert_eq!(p.test_invocations().0 - entered, expected_entries);
+    assert_eq!(p.test_invocations().1 - resumed, 0);
     assert_eq!(done.lease, 0);
     match done.frame {
         Some(frame) => (
@@ -966,7 +993,6 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
     use busbar_contract::abi::host::hook::NotifyFrame;
     use busbar_contract::abi::mechanism::call::{DeadlineClass, InHead, OutHead};
     use busbar_contract::abi::mechanism::lifecycle::{TickIn, TickOut, ValidateIn};
-    use std::sync::atomic::Ordering::SeqCst;
     use std::time::Duration;
     const ROWS: &[Row] = &[
         (3, Some(5.0), Some(200.0), 2, Some(0.2)),
@@ -974,13 +1000,16 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
         (7, None, Some(90.0), 4, Some(0.8)),
     ];
     for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
-        let d = Dispatcher::new(DispatchConfig::default());
+        let d = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
         let p = load(&d);
-        let before_facts = p.inner.crossings.load(SeqCst);
+        let before_facts = p.test_invocations().0;
         assert_eq!(p.kind(), busbar_contract::abi::mechanism::KindCode::Hook);
         assert_eq!(p.max_inflight(), 64);
         assert!(!p.name().is_empty());
-        assert_eq!(p.inner.crossings.load(SeqCst), before_facts);
+        assert_eq!(p.test_invocations().0, before_facts);
         const NOT_AN_OBJECT: &str = "settings: must be a JSON object";
         let bad_settings = [
             (
@@ -1046,11 +1075,11 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
             Outcome::Ready
         );
         assert_eq!(open(&p, r#"{"policy":"cheapest"}"#), Outcome::Ready);
-        let before_ready = p.inner.crossings.load(SeqCst);
+        let before_ready = p.test_invocations().0;
         p.ready(&d, Duration::from_secs(30))
             .expect("actual ranking door ready");
         assert_eq!(
-            p.inner.crossings.load(SeqCst) - before_ready,
+            p.test_invocations().0 - before_ready,
             u64::from(p.has_ready())
         );
         assert_eq!(
@@ -1077,7 +1106,7 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
         );
         let transform_view = DecideFrame::first(DecideView::build(&request(), &[], &ctx()));
         let ticket = d.mint(0).unwrap();
-        let entered = p.inner.crossings.load(SeqCst);
+        let entered = p.test_invocations().0;
         let done = d
             .submit_watched(
                 &p,
@@ -1094,7 +1123,7 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
         assert_eq!(done.outcome, Outcome::Ready);
         assert_eq!(done.lease, 0);
         assert_eq!(done.frame.unwrap().out.verbs, VERB_ABSTAIN);
-        assert_eq!(p.inner.crossings.load(SeqCst) - entered, 1);
+        assert_eq!(p.test_invocations().0 - entered, 1);
         assert_eq!(
             ticketed_decide(&p, &d, ROWS, 2, false, 2),
             (Outcome::Ready, VERB_PREFER, vec![9, 3, 7])
@@ -1105,7 +1134,7 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
         );
         let notify = NotifyFrame::build(&request(), None, false);
         let ticket = d.mint(0).unwrap();
-        let entered = p.inner.crossings.load(SeqCst);
+        let entered = p.test_invocations().0;
         let frame: Frame<_, OutHead> = Frame::new(notify.input(), out_head());
         let done = d
             .submit_watched(
@@ -1122,7 +1151,7 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
         d.recycle(ticket);
         assert_eq!(done.outcome, Outcome::Ready);
         assert_eq!(done.lease, 0);
-        assert_eq!(p.inner.crossings.load(SeqCst) - entered, 1);
+        assert_eq!(p.test_invocations().0 - entered, 1);
         for operation in [slot::STATUS, slot::DESCRIBE] {
             let (called, blob) = if operation == slot::STATUS {
                 let mut f: Frame<InHead, StatusOut> = Frame::new(in_head(), blank_out());
@@ -1189,7 +1218,7 @@ fn ordinary_lifecycle_and_management_preserve_the_published_ranking_contract() {
             Outcome::Ready
         );
         assert_ne!(ticketed_decide(&p, &d, ROWS, 2, false, 0).0, Outcome::Ready);
-        assert_eq!(p.inner.resumes.load(SeqCst), 0);
+        assert_eq!(p.test_invocations().1, 0);
         assert_eq!(d.stats().deadline_without_wake, 0);
     }
 }
@@ -1201,11 +1230,11 @@ fn declared_needs_and_requested_profile_match_the_actual_ranking_image() {
         "BUSBAR_EXPECT_RELEASE requires cargo test --release"
     );
     let declared: serde_json::Value =
-        serde_json::from_str(include_str!("../../hook-ranking/declares.json")).unwrap();
+        serde_json::from_str(include_str!("../../declares.json")).unwrap();
     assert!(declared
         .get("needs")
         .is_none_or(|needs| needs.as_array().is_some_and(Vec::is_empty)));
-    let row = LinkedRow::of(busbar_hook_ranking::linked::door).expect("actual ranking Statement");
+    let row = LinkedRow::of(crate::linked::door).expect("actual ranking Statement");
     assert!(
         busbar_contract::abi::mechanism::rendering::read(&row.statement)
             .unwrap()
@@ -1213,7 +1242,10 @@ fn declared_needs_and_requested_profile_match_the_actual_ranking_image() {
             .is_empty()
     );
     // The dropped image is admitted only against the linked rendering, so it states the same needs.
-    let d = Dispatcher::new(DispatchConfig::default());
+    let d = Dispatcher::new(
+        DispatchConfig::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
     for p in [linked(&d), dropped(&d)] {
         assert_eq!(p.kind(), busbar_contract::abi::mechanism::KindCode::Hook);
     }
@@ -1242,7 +1274,7 @@ extern "C" fn metadata_door<const CASE: usize>(
     use busbar_contract::abi::mechanism::door::{Door, Statement};
     static DOORS: [std::sync::OnceLock<usize>; 5] = [const { std::sync::OnceLock::new() }; 5];
     *DOORS[CASE].get_or_init(|| {
-        let mut parts = busbar_hook_ranking::linked::door().parts();
+        let mut parts = crate::linked::door().parts();
         let kind = busbar_contract::abi::mechanism::KindCode::Hook;
         match CASE {
             0 => parts.kind_abi = kind.abi_version() + 1,
@@ -1285,9 +1317,12 @@ fn the_actual_kind_abi_is_checked_by_pack_linked_and_dropped_origins() {
     use busbar_plugin_loader::dispatch::LoadError;
     let kind = busbar_contract::abi::mechanism::KindCode::Hook;
     let host = kind.abi_version();
-    assert_eq!(busbar_hook_ranking::linked::door().parts().kind_abi, host);
-    let d = Dispatcher::new(Default::default());
-    let honest = LinkedRow::of(busbar_hook_ranking::linked::door).expect("actual Statement");
+    assert_eq!(crate::linked::door().parts().kind_abi, host);
+    let d = Dispatcher::new(
+        Default::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
+    let honest = LinkedRow::of(crate::linked::door).expect("actual Statement");
     let _ = load_linked::<Hook>(&honest, bind(&d)).expect("honest linked twin");
     let _ = load_dropped::<Hook>(&metadata_image(), &honest.statement, bind(&d))
         .expect("honest dropped twin");
@@ -1326,9 +1361,12 @@ fn the_actual_kind_layout_is_checked_under_honest_and_own_rows() {
     use busbar_plugin_loader::dispatch::LoadError;
     let kind = busbar_contract::abi::mechanism::KindCode::Hook;
     let host = kind.layout_fingerprint();
-    assert_eq!(busbar_hook_ranking::linked::door().parts().layout, host);
-    let d = Dispatcher::new(Default::default());
-    let honest = LinkedRow::of(busbar_hook_ranking::linked::door).unwrap();
+    assert_eq!(crate::linked::door().parts().layout, host);
+    let d = Dispatcher::new(
+        Default::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
+    let honest = LinkedRow::of(crate::linked::door).unwrap();
     let _ = load_linked::<Hook>(&honest, bind(&d)).unwrap();
     let _ = load_dropped::<Hook>(&metadata_image(), &honest.statement, bind(&d)).unwrap();
     for (door, stated) in [
@@ -1370,8 +1408,11 @@ fn the_actual_kind_layout_is_checked_under_honest_and_own_rows() {
 #[test]
 fn the_actual_statement_matches_each_row_manifest_and_restated_version() {
     use busbar_plugin_loader::dispatch::LoadError;
-    let d = Dispatcher::new(Default::default());
-    let honest = LinkedRow::of(busbar_hook_ranking::linked::door).unwrap();
+    let d = Dispatcher::new(
+        Default::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
+    let honest = LinkedRow::of(crate::linked::door).unwrap();
     let _ = load_linked::<Hook>(&honest, bind(&d)).unwrap();
     let _ = load_dropped::<Hook>(&metadata_image(), &honest.statement, bind(&d)).unwrap();
     let changed = different_valid_statement(&honest.statement);
@@ -1401,8 +1442,11 @@ fn the_actual_statement_matches_each_row_manifest_and_restated_version() {
 
 fn other_kind_is_refused<K: busbar_plugin_loader::dispatch::Kind>() {
     use busbar_plugin_loader::dispatch::LoadError;
-    let d = Dispatcher::new(Default::default());
-    let row = LinkedRow::of(busbar_hook_ranking::linked::door).unwrap();
+    let d = Dispatcher::new(
+        Default::default(),
+        busbar_contract::services::test_caller_binding(),
+    );
+    let row = LinkedRow::of(crate::linked::door).unwrap();
     let want = LoadError::ManifestKind {
         stated: busbar_contract::abi::mechanism::KindCode::Hook,
         want: K::CODE,
@@ -1425,6 +1469,6 @@ fn the_actual_image_is_refused_as_every_other_kind_through_both_origins() {
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::export::Export>();
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::plane::Plane>();
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::secret::Secret>();
-    other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::store::Store>();
+    other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::store_v4::StoreV4>();
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::transport::Transport>();
 }

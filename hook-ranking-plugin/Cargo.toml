@@ -37,5 +37,6 @@ busbar-contract = { workspace = true }
 busbar-hook-ranking-plugin = { path = ".", features = ["dropped-in"] }
 # The conformance tests load the linked door and dlopen the built cdylib over busbar's REAL loader:
 # dev-only, never in the shipped artifact. Ordinary integration tests exercise the actual doors.
-busbar-plugin-loader = { workspace = true }
+busbar-plugin-loader = { workspace = true , features = ["test-support"] }
 serde_json = { workspace = true }
+busbar-contract = { workspace = true, features = ["test-seal"] }

@@ -21,10 +21,10 @@
 //! that is not finite and positive; a rate headroom is clamped into `[0, 1]`; concurrency is an
 //! integer); this keeps a stray one harmless.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
-pub mod door;
+pub(crate) mod door;
 
 use std::collections::BTreeMap;
 
@@ -146,12 +146,12 @@ pub(crate) fn rank_with_expected_units(
 ///   available this window); a member with no headroom signal is demoted, and every member lacking
 ///   it Abstains (no rate limit in play).
 #[must_use]
-pub fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
+pub(crate) fn rank(name: &str, candidates: &[DecodedCandidate<'_>]) -> Option<Verdict> {
     rank_with_expected_units(name, candidates, &BTreeMap::new())
 }
 
 /// The strategy words this plugin claims (its Statement's hook words).
-pub const WORDS: [&str; 4] = [
+pub(crate) const WORDS: [&str; 4] = [
     POLICY_NAME_CHEAPEST,
     POLICY_NAME_FASTEST,
     POLICY_NAME_LEAST_BUSY,
@@ -175,3 +175,21 @@ pub mod linked {
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;
+
+/// The validated entry and generated registration descriptor.
+pub use door::{door, MACRO_DOOR};
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+#[path = "tests/door_witness.rs"]
+mod door_witness;
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+#[path = "tests/determinism.rs"]
+mod determinism_tests;
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+#[path = "tests/statement.rs"]
+mod statement_tests;

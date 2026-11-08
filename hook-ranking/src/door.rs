@@ -174,7 +174,11 @@ fn checkpoint(
 }
 
 impl Hook for Ranking {
-    fn decide(&self, view: &Decoded<'_>, _: &Op<'_>) -> Poll<Verdict> {
+    fn decide(
+        &self,
+        view: &Decoded<'_>,
+        _: &Op<'_, busbar_contract::plugin::markers::HookKind>,
+    ) -> Poll<Verdict> {
         let word = self.word();
         if word != crate::POLICY_NAME_CHEAPEST {
             return Poll::Ready(crate::rank(word, &view.candidates).unwrap_or(Verdict::Abstain));

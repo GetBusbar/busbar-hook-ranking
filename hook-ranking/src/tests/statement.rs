@@ -4,10 +4,10 @@
 //! The Statement the ranking door states, read back field by field: the four hook word marks and
 //! the hook tail (class, prompt grant, user grant), as the plugin states them.
 
+use crate::door::STATEMENT;
+use crate::{NAME, WORDS};
 use busbar_contract::abi::hook::{Tail, CLASS_GATE, PROMPT_NO, USER_NO};
 use busbar_contract::abi::mechanism::door::{MARK_WORD_HOOK, REWRITE_ALIAS};
-use busbar_hook_ranking::door::STATEMENT;
-use busbar_hook_ranking::{NAME, WORDS};
 
 /// Every claimed word is one hook-class word mark, in `WORDS`' order, and no other mark is stated.
 #[test]
@@ -55,7 +55,7 @@ fn the_statement_tail_is_a_gate_with_no_prompt_and_no_user_grant() {
 /// The Statement states its alias rewrite (`module: ranking` names this plugin), once.
 #[test]
 fn the_statement_states_the_alias_rewrite() {
-    use busbar_hook_ranking::ALIAS;
+    use crate::ALIAS;
     assert_eq!(STATEMENT.rewrites_len, 1);
     // SAFETY: `rewrites` is the door's `'static` table of `rewrites_len` entries.
     let rewrites =

@@ -5,8 +5,8 @@
 //! `hook-ranking/src/lib.rs`. Non-monotone input indices distinguish this from preserving input
 //! order. Both full and partial ties are checked through `rank`, the public ranking entry point.
 
+use crate::rank;
 use busbar_contract::abi::sdk::hook::{DecodedCandidate, Verdict};
-use busbar_hook_ranking::rank;
 
 mod allocations {
     use std::alloc::{GlobalAlloc, Layout, System};
