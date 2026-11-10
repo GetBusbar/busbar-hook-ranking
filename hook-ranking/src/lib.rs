@@ -193,3 +193,5 @@ mod determinism_tests;
 #[allow(unsafe_code)]
 #[path = "tests/statement.rs"]
 mod statement_tests;
+
+include!(concat!(env!("OUT_DIR"), "/root_test_source.rs"));
