@@ -1472,3 +1472,149 @@ fn the_actual_image_is_refused_as_every_other_kind_through_both_origins() {
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::store_v4::StoreV4>();
     other_kind_is_refused::<busbar_plugin_loader::dispatch::kinds::transport::Transport>();
 }
+
+#[allow(unsafe_code)]
+fn migrated_loader_cost_answer(p: &Plugin<Hook>, with_costs: bool) -> String {
+    use busbar_contract::abi::hook::{
+        CandidateDynamic, CandidateStatic, SignalEntry, SignalValue, CANDIDATE_HAS_COST_PER_MTOK,
+        SIGNAL_TAG_BOOL, SIGNAL_TAG_F64, SIGNAL_TAG_STR,
+    };
+    // SAFETY: these wire structs contain only integers, floats and pointers; zero is valid.
+    let mut candidates: [CandidateStatic; 2] = unsafe { std::mem::zeroed() };
+    // SAFETY: CandidateDynamic likewise consists entirely of zero-valid wire fields.
+    let mut dynamics: [CandidateDynamic; 2] = unsafe { std::mem::zeroed() };
+    candidates[1].idx = 1;
+    // The legacy scalar favors the opposite order and cannot supply a missing recipe.
+    for (candidate, cost) in candidates.iter_mut().zip([2.0, 9.0]) {
+        candidate.cost_per_mtok = cost;
+        candidate.present = CANDIDATE_HAS_COST_PER_MTOK;
+    }
+    // route_cost's v1 stream: marker, class, price per unit, expected units.
+    // Both these arrays and their static class string remain live through DECIDE.
+    let id = busbar_contract::signal::Signal::CandidateRouteCost.bit();
+    let signals = [9.0, 2.0].map(|cost| {
+        [
+            SignalEntry {
+                id,
+                tag: SIGNAL_TAG_BOOL,
+                value: SignalValue { boolean: 1 },
+            },
+            SignalEntry {
+                id,
+                tag: SIGNAL_TAG_STR,
+                value: SignalValue {
+                    str_: busbar_contract::abi::sdk::door::abi_str("work"),
+                },
+            },
+            SignalEntry {
+                id,
+                tag: SIGNAL_TAG_F64,
+                value: SignalValue { f64_: cost },
+            },
+            SignalEntry {
+                id,
+                tag: SIGNAL_TAG_F64,
+                value: SignalValue { f64_: 1.0 },
+            },
+        ]
+    });
+    if with_costs {
+        for (dynamic, entries) in dynamics.iter_mut().zip(&signals) {
+            dynamic.signals = entries.as_ptr();
+            dynamic.signals_len = entries.len();
+        }
+    }
+    let mut order = [u32::MAX; 2];
+    let mut reject = [0u8; 64];
+    let mut tags = [0u8; 64];
+    // SAFETY: DecideIn contains only zero-valid integers, floats, and pointers.
+    let mut input: busbar_contract::abi::hook::DecideIn = unsafe { std::mem::zeroed() };
+    input.head = in_head();
+    let mut d = Frame::new(input, blank_out::<DecideOut>());
+    d.input.request.request_id = 7;
+    d.input.candidates = candidates.as_ptr();
+    d.input.candidate_dynamics = dynamics.as_ptr();
+    d.input.candidates_len = candidates.len();
+    d.input.order_buf = order.as_mut_ptr();
+    d.input.order_cap = order.len();
+    d.input.reject_message_buf = reject.as_mut_ptr();
+    d.input.reject_message_cap = reject.len();
+    d.input.restrict_tags_buf = tags.as_mut_ptr();
+    d.input.restrict_tags_cap = tags.len();
+    let called = checked_call(p, slot::DECIDE, &mut d);
+    assert_eq!(called.outcome, Outcome::Ready);
+    assert!(called.error.is_none(), "{:?}", called.error);
+    assert_eq!(d.out.reject_message_written, 0);
+    assert_eq!(d.out.restrict_tags_written, 0);
+    assert!(d.out.order_written <= order.len());
+    assert!(d.out.reject_message_written <= reject.len());
+    assert!(d.out.restrict_tags_written <= tags.len());
+    assert_eq!(d.out.verbs, if with_costs { 1 } else { 2 });
+    assert_eq!(
+        &order[..d.out.order_written],
+        if with_costs { &[1, 0][..] } else { &[][..] }
+    );
+
+    format!(
+        "decide: {:?} lease={} result={:?} order={:?} reject={:?} tags={:?}",
+        called.outcome,
+        called.lease,
+        (
+            d.out.verbs,
+            d.out.reject_status,
+            d.out._reserved,
+            d.out.reject_message_written,
+            d.out.reject_message_needed,
+            d.out.restrict_tags_written,
+            d.out.restrict_tags_needed,
+            d.out.order_written,
+            d.out.order_needed
+        ),
+        &order[..d.out.order_written],
+        &reject[..d.out.reject_message_written],
+        &tags[..d.out.restrict_tags_written]
+    )
+}
+
+// The core loader formerly carried these exact two product inputs. Keep their
+// buffer bounds, complete output comparison, and recipe/scalar distinction here.
+#[test]
+fn migrated_loader_cost_answers_preserve_every_output_through_both_doors() {
+    let mut transcripts = Vec::new();
+    for load in [linked as fn(&Dispatcher) -> Plugin<Hook>, dropped] {
+        let dispatcher = Dispatcher::new(
+            DispatchConfig::default(),
+            busbar_contract::services::test_caller_binding(),
+        );
+        let plugin = load(&dispatcher);
+        for (settings, reason) in [
+            ("{}", "ranking: settings.policy is required"),
+            (r#"{"policy":17}"#, "settings.policy must be a string"),
+            (r#"{"policy":"unknown"}"#, "no strategy 'unknown'"),
+        ] {
+            let mut error = [0u8; 1024];
+            let mut validation = Frame::new(
+                busbar_contract::abi::mechanism::lifecycle::ValidateIn {
+                    head: in_head(),
+                    settings: Blob {
+                        ptr: settings.as_ptr(),
+                        len: settings.len(),
+                        fmt: BLOB_JSON,
+                        flags: 0,
+                    },
+                    err_buf: error.as_mut_ptr(),
+                    err_cap: error.len(),
+                },
+                out_head(),
+            );
+            let answer = checked_call(&plugin, life::VALIDATE, &mut validation);
+            assert_eq!(answer.outcome, Outcome::Failed);
+            let why = String::from_utf8_lossy(answer.error.as_deref().unwrap_or_default());
+            assert!(why.contains(reason), "{settings}: {why}");
+        }
+        assert_eq!(open(&plugin, r#"{"policy":"cheapest"}"#), Outcome::Ready);
+        transcripts
+            .push([false, true].map(|with_costs| migrated_loader_cost_answer(&plugin, with_costs)));
+    }
+    assert_eq!(transcripts[0], transcripts[1]);
+}

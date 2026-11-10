@@ -67,3 +67,19 @@ The moved-count RED comparator test is retired with its deleted comparator imple
 The pinned reusable CI workflow still contains historical kit-name/comparator requirements; root renderer owns replacement and canonical fresh artifact wiring before eventual SDK qualification. No public pin is changed here.
 
 Native diagnostic refinement: the historical last-byte Statement mutation corrupts the actual rendering's trailing claims count and gets Rendering refusal before equality comparison. The ordinary mismatch tests now change one same-length actual version-string byte, first proving the mutated rendering still parses, then retaining the exact linked/dropped StatementMismatch and separately restated-version refusal. This repairs the negative input to reach its original equality oracle; it does not weaken the expected refusal.
+
+
+## Loader Hook ownership follow-up
+
+Core's Hook loader checks now use its existing SDK Gate witness. The exact Ranking
+inputs formerly embedded in `hook_door_conformance_tests.rs::ranking_decide` and
+`hook_door_tests.rs::a_linked_and_a_dropped_in_hook_open_through_the_axis_and_decide_identically`
+are preserved by `door_witness::migrated_loader_cost_answers_preserve_every_output_through_both_doors`.
+Both actual origins see candidates with legacy scalar costs `[2, 9]` and, separately,
+absent recipes or recipe costs `[9, 2]`; expected results remain abstain/empty order
+and prefer/`[1, 0]`. All three output-buffer bounds, zero rejection/tag writes,
+READY/no-error outcomes, and the complete result transcript remain checked. Missing,
+numeric, and unknown policy validation reasons also remain checked through both doors.
+Existing ordinary lifecycle/configure witnesses continue to own policy management;
+core's pending-ticket, session forwarding, route metadata, aliases, and lease checks
+retain their loader responsibilities using the neutral witness.
