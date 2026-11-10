@@ -1267,8 +1267,25 @@ fn different_valid_statement(statement: &[u8]) -> Vec<u8> {
     changed
 }
 
-// These negative inputs retain this product's actual Statement and operation table. Only the
-// numerical ABI/layout declaration or version string is changed; no plugin behavior is copied.
+extern "C" fn metadata_serve(
+    _: *mut std::ffi::c_void,
+    _: *const std::ffi::c_void,
+    out: *mut std::ffi::c_void,
+) -> busbar_contract::abi::mechanism::call::RawOutcome {
+    use busbar_contract::abi::mechanism::call::{OutHead, RawOutcome};
+    let refused = RawOutcome::of(Outcome::Refused);
+    if !out.is_null() {
+        // SAFETY: the ABI lends a writable OutHead at the start of every non-NULL output.
+        unsafe {
+            std::ptr::addr_of_mut!((*out.cast::<OutHead>()).outcome).write_unaligned(refused);
+        }
+    }
+    refused
+}
+
+// These negative inputs retain this product's actual Statement and declared operations while
+// changing its ABI/layout metadata or version. Layout cases also fill the absent optional SERVE
+// slot so an unrelated table refusal cannot mask the metadata error.
 extern "C" fn metadata_door<const CASE: usize>(
 ) -> *const busbar_contract::abi::mechanism::door::Door {
     use busbar_contract::abi::mechanism::door::{Door, Statement};
@@ -1295,8 +1312,21 @@ extern "C" fn metadata_door<const CASE: usize>(
             }
             _ => unreachable!(),
         }
+        if CASE == 2 || CASE == 3 {
+            // An invalid layout prevents the loader from using the Statement to exempt SERVE.
+            // Supply that absent optional slot so table validation reaches the layout refusal.
+            // SAFETY: the actual Hook door points at its immutable, static Hook ops table.
+            let mut ops = unsafe {
+                parts
+                    .ops
+                    .cast::<busbar_contract::abi::hook::Ops>()
+                    .read_unaligned()
+            };
+            ops.serve.get_or_insert(metadata_serve);
+            parts.ops = std::ptr::from_ref(Box::leak(Box::new(ops))).cast();
+        }
         // SAFETY: the actual product's full table and nested Statement ranges remain immutable
-        // and static. Changed metadata is deliberately invalid and judged before any operation.
+        // and static. The optional SERVE filler honours the ABI; no operation is invoked here.
         let door = unsafe { Door::__from_parts(parts) };
         Box::into_raw(Box::new(door)) as usize
     }) as *const Door
