@@ -77,7 +77,7 @@ fn rank_by<K: PartialOrd + Copy>(
     keyed.push(first);
     keyed.extend(keys);
 
-    keyed.sort_by(|a, b| key_order(a, b, descending));
+    keyed.sort_unstable_by(|a, b| key_order(a, b, descending));
     Verdict::Prefer(keyed.into_iter().map(|(idx, _)| idx).collect())
 }
 

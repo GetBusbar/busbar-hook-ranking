@@ -73,6 +73,9 @@ const REWRITES: &[Rewrite] = &[alias(ALIAS)];
 /// The catalogue code a refused `configure` is raised under (declared in `declares.json`).
 pub const CONFIGURE_REFUSED: &str = "BUSBAR-7150";
 
+/// Error returned when the configure checkpoint cannot be serialised.
+const CHECKPOINT_ENCODING_FAILED: &str = "ranking configuration checkpoint encoding failed";
+
 busbar_contract::statement_extensions!(
     EXTENSIONS: [
         (
@@ -165,10 +168,9 @@ fn checkpoint(
 ) -> Result<ConfigureCheckpoint, String> {
     let mut bytes = b"{\"policy\":".to_vec();
     serde_json::to_writer(&mut bytes, policy)
-        .map_err(|_| "ranking configuration checkpoint encoding failed".to_string())?;
+        .map_err(|_| CHECKPOINT_ENCODING_FAILED.to_string())?;
     bytes.extend_from_slice(b",\"expected_units\":");
-    serde_json::to_writer(&mut bytes, units)
-        .map_err(|_| "ranking configuration checkpoint encoding failed".to_string())?;
+    serde_json::to_writer(&mut bytes, units).map_err(|_| CHECKPOINT_ENCODING_FAILED.to_string())?;
     bytes.push(b'}');
     ConfigureCheckpoint::new(revision, version, bytes)
 }
